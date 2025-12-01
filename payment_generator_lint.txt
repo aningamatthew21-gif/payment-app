@@ -1,0 +1,16 @@
+
+C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\src\components\PaymentGenerator.jsx
+    4:22  error  'addDoc' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                            no-unused-vars
+    4:30  error  'deleteDoc' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                         no-unused-vars
+    4:41  error  'doc' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                               no-unused-vars
+    4:46  error  'updateDoc' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                         no-unused-vars
+    4:69  error  'getDocs' is defined but never used. Allowed unused vars must match /^[A-Z_]/u                           no-unused-vars
+   20:3   error  'setAvailablePayments' is defined but never used                                                         no-unused-vars
+   21:3   error  'onPaymentGenerated' is defined but never used                                                           no-unused-vars
+  193:9   error  'handleRemoveFromBatch' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u    no-unused-vars
+  218:9   error  'handleFinalizeSchedule' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u   no-unused-vars
+  238:9   error  'handlePreviewSchedule' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u    no-unused-vars
+  246:9   error  'handleGenerateDocuments' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u  no-unused-vars
+
+✖ 11 problems (11 errors, 0 warnings)
+

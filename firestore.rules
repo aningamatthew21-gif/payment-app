@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow access to artifacts collection and all subcollections
+    match /artifacts/{appId}/{document=**} {
+      allow read, write: if true;
+    }
+    
+    // Specific rules for WHT collections
+    match /artifacts/{appId}/whtReturns/{document} {
+      allow read, write: if true;
+    }
+    
+    match /artifacts/{appId}/whtBatchSummaries/{document} {
+      allow read, write: if true;
+    }
+    
+    match /artifacts/{appId}/public/data/whtReturns/{document} {
+      allow read, write: if true;
+    }
+    
+    match /artifacts/{appId}/public/data/whtBatchSummaries/{document} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to master log entries
+    match /artifacts/{appId}/masterLog/{document} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to payment staging
+    match /artifacts/{appId}/paymentStaging/{document} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to procurement types
+    match /artifacts/{appId}/procurementTypes/{document} {
+      allow read, write: if true;
+    }
+  }
+}

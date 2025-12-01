@@ -1,0 +1,16 @@
+
+C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\src\pages\BudgetManagementPage.jsx
+   13:64  error    'onBack' is defined but never used                                                                                                                                                no-unused-vars
+   19:12  error    'importFile' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                                                                        no-unused-vars
+   25:12  error    'dataQualityReport' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                                                                 no-unused-vars
+   26:12  error    'validationIssues' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                                                                  no-unused-vars
+   27:12  error    'showValidationPanel' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                                                               no-unused-vars
+  232:33  error    'onSnapshot' is not defined                                                                                                                                                       no-undef
+  284:8   warning  React Hook useEffect has missing dependencies: 'budgetLines.length', 'createSampleBudgetLines', and 'loadBudgetDataDirectly'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  553:11  error    'handleExcelImportComplete' is assigned a value but never used. Allowed unused vars must match /^[A-Z_]/u                                                                         no-unused-vars
+
+C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\src\pages\DashboardPage.jsx
+  9:38  error  'onBack' is defined but never used  no-unused-vars
+
+✖ 9 problems (8 errors, 1 warning)
+

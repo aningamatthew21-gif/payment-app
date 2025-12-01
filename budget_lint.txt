@@ -1,0 +1,6 @@
+
+C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\src\pages\BudgetManagementPage.jsx
+  1291:12  error  Parsing error: Unexpected token `}`. Did you mean `&rbrace;` or `{"}"}`?
+
+✖ 1 problem (1 error, 0 warnings)
+

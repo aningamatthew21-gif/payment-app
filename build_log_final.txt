@@ -1,0 +1,28 @@
+
+> payment_schedule_code@0.0.0 build
+> vite build
+
+[36mvite v7.2.4 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 1976 modules transformed.
+[31m✗[39m Build failed in 2.17s
+[31merror during build:
+[31msrc/services/paymentService.js (2:7): "default" is not exported by "src/services/UndoService.js", imported by "src/services/paymentService.js".[31m
+file: [36mC:/Users/Public/PROJECECT QUOTE/PAYMENT APP/PAYMENT APP/src/services/paymentService.js:2:7[31m
+[33m
+1: import { collection, addDoc, deleteDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
+2: import UndoService from './UndoService';
+          ^
+3: 
+4: export const stagePayment = async (db, appId, paymentData) => {
+[31m
+    at getRollupError (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/parseAst.js:401:41)
+    at error (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/parseAst.js:397:42)
+    at Module.error (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:16915:16)
+    at Module.traceVariable (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:17367:29)
+    at ModuleScope.findVariable (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:15037:39)
+    at ReturnValueScope.findVariable (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:5626:38)
+    at FunctionBodyScope.findVariable (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:5626:38)
+    at MemberExpression.bind (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:7330:49)
+    at CallExpression.bind (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:2791:23)
+    at CallExpression.bind (file:///C:/Users/Public/PROJECECT%20QUOTE/PAYMENT%20APP/PAYMENT%20APP/node_modules/rollup/dist/es/shared/node-entry.js:12066:15)[39m

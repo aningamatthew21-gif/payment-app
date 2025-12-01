@@ -1,0 +1,40 @@
+
+> payment_schedule_code@0.0.0 build
+> vite build
+
+[36mvite v7.2.4 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 26 modules transformed.
+[31m✗[39m Build failed in 262ms
+[31merror during build:
+[31m[vite:esbuild] Transform failed with 2 errors:
+C:/Users/Public/PROJECECT QUOTE/PAYMENT APP/PAYMENT APP/src/pages/BudgetManagementPage.jsx:1292:18: ERROR: Unexpected closing "Layout" tag does not match opening "div" tag
+C:/Users/Public/PROJECECT QUOTE/PAYMENT APP/PAYMENT APP/src/pages/BudgetManagementPage.jsx:1293:13: ERROR: Expected "}" but found ";"[31m
+file: [36mC:/Users/Public/PROJECECT QUOTE/PAYMENT APP/PAYMENT APP/src/pages/BudgetManagementPage.jsx:1292:18[31m
+[33m
+[33mUnexpected closing "Layout" tag does not match opening "div" tag[33m
+1290 |                      </div>
+1291 |            )}
+1292 |                  </Layout>
+     |                    ^
+1293 |              );
+1294 |  };
+
+[33mExpected "}" but found ";"[33m
+1291 |            )}
+1292 |                  </Layout>
+1293 |              );
+     |               ^
+1294 |  };
+1295 |  
+[31m
+    at failureErrorWithLog (C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\node_modules\esbuild\lib\main.js:1467:15)
+    at C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\node_modules\esbuild\lib\main.js:736:50
+    at responseCallbacks.<computed> (C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\node_modules\esbuild\lib\main.js:603:9)
+    at handleIncomingPacket (C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\node_modules\esbuild\lib\main.js:658:12)
+    at Socket.readFromStdout (C:\Users\Public\PROJECECT QUOTE\PAYMENT APP\PAYMENT APP\node_modules\esbuild\lib\main.js:581:7)
+    at Socket.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:510:3)
+    at Readable.push (node:internal/streams/readable:390:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23)[39m
