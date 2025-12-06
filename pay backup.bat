@@ -28,7 +28,7 @@ set "timestamp=%date% %time%"
 
 echo.
 echo Pushing to GitHub...
-"%GIT_PATH%" push origin master
+"%GIT_PATH%" push origin main
 
 echo.
 echo ==========================================
