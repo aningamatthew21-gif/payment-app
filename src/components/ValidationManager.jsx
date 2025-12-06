@@ -25,6 +25,7 @@ import {
   orderBy
 } from 'firebase/firestore';
 import { exportValidationData, importValidationData } from '../services/ExcelService.js';
+import { VendorService } from '../services/VendorService.js';
 
 const VALIDATION_FIELDS = {
   paymentModes: {
@@ -211,6 +212,20 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
         });
       } catch (budgetError) {
         console.error('Error loading budget lines:', budgetError);
+      }
+
+      // Load vendors from VendorService
+      try {
+        console.log('Loading vendors from VendorService...');
+        const vendors = await VendorService.getAllVendors(db, appId);
+        data.vendors = vendors.map(v => ({
+          id: v.id,
+          value: v.name,
+          description: v.banking?.bankName ? `${v.banking.bankName} - ${v.banking.accountNumber}` : '',
+          isActive: v.status === 'active'
+        }));
+      } catch (vendorError) {
+        console.error('Error loading vendors:', vendorError);
       }
 
       console.log('Processed validation data:', data);
@@ -737,6 +752,34 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
                     Go to Budget Management
                   </button>
                 </div>
+              ) : activeFieldManager === 'vendors' ? (
+                <div className="bg-cyan-50 p-4 rounded-lg mb-6 border border-cyan-200">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Info size={20} className="text-cyan-600" />
+                    <h4 className="font-medium text-cyan-900">Vendors Managed in Vendor Management</h4>
+                  </div>
+                  <p className="text-sm text-cyan-700 mb-3">
+                    Vendors are now managed in the dedicated Vendor Management module.
+                    To add or modify vendors, please use the Vendor Management page.
+                  </p>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      // Assuming navigation is handled via URL hash or similar mechanism in parent
+                      // or just let the user navigate manually if we can't trigger it here easily.
+                      // Ideally we should pass a navigation callback, but for now we'll just close.
+                      // If we can redirect:
+                      if (window.location.hash === '#vendorManagement') {
+                        window.location.reload();
+                      } else {
+                        window.location.hash = '#vendorManagement';
+                      }
+                    }}
+                    className="px-4 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors"
+                  >
+                    Go to Vendor Management
+                  </button>
+                </div>
               ) : activeFieldManager === 'companySettings' ? (
                 <div className="bg-gray-50 p-6 rounded-lg mb-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -983,6 +1026,10 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
                           {activeFieldManager === 'budgetLines' ? (
                             <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
                               Auto-loaded
+                            </div>
+                          ) : activeFieldManager === 'vendors' ? (
+                            <div className="text-xs text-cyan-600 bg-cyan-50 px-2 py-1 rounded">
+                              Managed Externally
                             </div>
                           ) : (
                             <>

@@ -1,4 +1,4 @@
-import { collection, addDoc, deleteDoc, doc, updateDoc, getDocs } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, updateDoc, getDocs, runTransaction } from 'firebase/firestore';
 import { UndoService } from './UndoService';
 
 export const stagePayment = async (db, appId, paymentData) => {
@@ -18,46 +18,63 @@ export const clearBatch = async (db, appId) => {
   return await Promise.all(deletePromises);
 };
 
-export const finalizeSchedule = async (db, appId, userId, stagedPayments, weeklySheetId) => {
-  const transactionLog = {
-    batchId: `BATCH_${Date.now()}`,
-    timestamp: new Date().toISOString(),
-    userId,
-    totalAmount: stagedPayments.reduce((sum, p) => sum + parseFloat(p.amount), 0),
-    paymentCount: stagedPayments.length,
-    status: 'finalized',
-    payments: stagedPayments.map(p => ({
-      id: p.id,
-      vendor: p.vendor,
-      amount: p.amount,
-      budgetLine: p.budgetItem,
-      invoiceNo: p.invoiceNo,
-      description: p.description
-    })),
-    metadata: {
-      weeklySheetId: weeklySheetId,
-      budgetLinesAffected: [...new Set(stagedPayments.map(p => p.budgetItem))],
-      currencies: [...new Set(stagedPayments.map(p => p.currency))]
+export const finalizeSchedule = async (db, appId, userId, weeklySheetId) => {
+  return await runTransaction(db, async (transaction) => {
+    // 1. READ: Fetch staged payments INSIDE the transaction
+    const stagedRef = collection(db, `artifacts/${appId}/public/data/stagedPayments`);
+    const snapshot = await getDocs(stagedRef);
+
+    if (snapshot.empty) throw new Error("No payments to finalize!");
+
+    const stagedPayments = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // 2. CALCULATE
+    // Use netPayable (Number), not amount (String)
+    const totalAmount = stagedPayments.reduce((sum, p) => sum + (Number(p.netPayable) || Number(p.amount) || 0), 0);
+
+    const transactionLog = {
+      batchId: `BATCH_${Date.now()}`,
+      timestamp: new Date().toISOString(),
+      userId,
+      totalAmount,
+      paymentCount: stagedPayments.length,
+      status: 'finalized',
+      payments: stagedPayments.map(p => ({
+        id: p.id,
+        vendor: p.vendor,
+        amount: Number(p.netPayable) || Number(p.amount) || 0,
+        budgetLine: p.budgetItem || p.budgetLine,
+        invoiceNo: p.invoiceNo,
+        description: p.description
+      })),
+      metadata: {
+        weeklySheetId: weeklySheetId,
+        budgetLinesAffected: [...new Set(stagedPayments.map(p => p.budgetItem || p.budgetLine))],
+        currencies: [...new Set(stagedPayments.map(p => p.currency))]
+      }
+    };
+
+    // 3. WRITE: Create Log
+    const logRef = doc(collection(db, `artifacts/${appId}/public/transactionLog`));
+    transaction.set(logRef, transactionLog);
+
+    // 4. WRITE: Update Weekly Sheet
+    if (weeklySheetId) {
+      const sheetRef = doc(db, `artifacts/${appId}/public/weeklySheets`, weeklySheetId);
+      transaction.update(sheetRef, {
+        lastFinalized: new Date().toISOString(),
+        finalizedPaymentsCount: stagedPayments.length,
+        totalFinalizedAmount: totalAmount
+      });
     }
-  };
 
-  const logRef = collection(db, `artifacts/${appId}/public/transactionLog`);
-  const logDoc = await addDoc(logRef, transactionLog);
-
-  await UndoService.logFinalization(db, appId, { ...transactionLog, transactionLogId: logDoc.id });
-
-  if (weeklySheetId) {
-    const weeklySheetRef = doc(db, `artifacts/${appId}/public/weeklySheets`, weeklySheetId);
-    await updateDoc(weeklySheetRef, {
-      lastFinalized: new Date().toISOString(),
-      finalizedPaymentsCount: stagedPayments.length,
-      totalFinalizedAmount: transactionLog.totalAmount
+    // 5. DELETE: Remove staged payments
+    snapshot.docs.forEach((doc) => {
+      transaction.delete(doc.ref);
     });
-  }
 
-  await clearBatch(db, appId);
-
-  return logDoc.id;
+    return logRef.id;
+  });
 };
 
 // New functions for Batch Logic and Data Sync

@@ -529,6 +529,12 @@ class PaymentFinalizationService {
               console.warn(`[PaymentFinalizationService] Payment ${payment.id} is already PAID. Skipping update.`);
               continue;
             }
+
+            // ✅ ENHANCED: Idempotency check
+            if (docData.payment_reference === batchId) {
+              console.warn(`[PaymentFinalizationService] Payment ${payment.id} already processed in batch ${batchId}. Skipping.`);
+              continue;
+            }
           }
 
           // Calculate amounts
@@ -655,7 +661,7 @@ class PaymentFinalizationService {
       // Log to master log using MasterLogService (FIXED from TransactionService)
       const logIds = [];
       const errors = [];
-      
+
       for (const transaction of transactions) {
         try {
           console.log(`[PaymentFinalizationService] Logging transaction ${transaction.id} to master log:`, {
@@ -682,7 +688,7 @@ class PaymentFinalizationService {
               manualStatus: 'Finalized'
             }
           );
-          
+
           logIds.push(logId);
           console.log(`[PaymentFinalizationService] ✓ Transaction ${transaction.id} logged successfully: ${logId}`);
         } catch (error) {

@@ -380,10 +380,17 @@ export const DocumentGenerationService = {
                     let docType = docItem.type;
                     let docName = docItem.name;
 
-                    // Handle local File objects (direct upload)
-                    if (docItem instanceof File) {
+                    // 1. Handle Wrapper Object from React State (docItem.file)
+                    if (docItem.file && docItem.file instanceof File) {
+                        arrayBuffer = await docItem.file.arrayBuffer();
+                    }
+                    // 2. Handle Raw File Object (if passed directly)
+                    else if (docItem instanceof File) {
                         arrayBuffer = await docItem.arrayBuffer();
-                    } else if (docItem.url) {
+                        // docType and docName are already set from docItem properties (File inherits them)
+                    }
+                    // 3. Handle Remote URLs (Existing Logic)
+                    else if (docItem.url) {
                         // Handle remote URLs (existing logic)
                         // Use proxy if in development to bypass CORS
                         const isDev = import.meta.env.DEV;

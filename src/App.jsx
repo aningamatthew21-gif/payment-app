@@ -14,6 +14,8 @@ import WeeklyPaymentsPage from './pages/WeeklyPaymentsPage.jsx';
 import WeeklyPaymentsDetail from './pages/WeeklyPaymentsDetail.jsx';
 import PaymentGeneratorPage from './pages/PaymentGeneratorPage.jsx';
 import BudgetManagementPage from './pages/BudgetManagementPage.jsx';
+import BankManagementPage from './pages/BankManagementPage.jsx';
+import VendorManager from './components/vendors/VendorManager.jsx';
 
 // Components
 import MasterLogDashboard from './components/MasterLogDashboard.jsx';
@@ -59,6 +61,12 @@ const AppContent = () => {
         break;
       case 'budgetManagement':
         navigate('/budget-management');
+        break;
+      case 'bankManagement':
+        navigate('/bank-management');
+        break;
+      case 'vendorManagement':
+        navigate('/vendor-management');
         break;
       case 'masterLogDashboard':
         navigate('/master-log');
@@ -188,6 +196,8 @@ const AppContent = () => {
         element={<PaymentGeneratorWrapper commonProps={commonProps} />}
       />
       <Route path="/budget-management" element={<BudgetManagementPage {...commonProps} />} />
+      <Route path="/bank-management" element={<BankManagementPage {...commonProps} />} />
+      <Route path="/vendor-management" element={<VendorManager {...commonProps} />} />
       <Route path="/master-log" element={<MasterLogDashboard {...commonProps} onNavigate={handleNavigate} />} />
       <Route path="/excel-demo" element={<ExcelDemo />} />
       <Route path="*" element={<Navigate to="/login" replace />} />

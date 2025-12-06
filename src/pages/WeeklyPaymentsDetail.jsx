@@ -49,7 +49,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
         procurementTypes: [],
         taxTypes: [],
         banks: [],
-        banks: [],
+
         currencies: [],
         budgetLines: [],
         departments: [],
@@ -106,7 +106,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 procurementTypes: [],
                 taxTypes: [],
                 banks: [],
-                banks: [],
+
                 currencies: [],
                 budgetLines: [],
                 departments: [],
@@ -378,7 +378,9 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
             amount: payment.fullPretax || payment.amount || '',
             momoCharge: payment.momoCharge || '',
             department: payment.department || '',
-            paymentPriority: payment.paymentPriority || ''
+            paymentPriority: payment.paymentPriority || '',
+            // FIX: Load WHT Rate for display (convert 0.03 to 3)
+            whtRate: payment.whtRate ? payment.whtRate * 100 : ''
         });
     };
 
@@ -540,6 +542,13 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
 
                 // Update derived fields (excluding WHT - handled by PaymentGenerator)
                 newData.momoCharge = calculation.momoCharge;
+
+                // FIX: Store ALL calculated values for UI display
+                newData.whtAmount = calculation.wht;
+                newData.whtRate = calculation.ratesUsed?.whtRate * 100;
+                newData.netPayable = calculation.netPayable;
+                newData.levyAmount = calculation.levy;
+                newData.vatAmount = calculation.vat;
             }
 
             console.log('Updated formData:', newData);
@@ -612,119 +621,191 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                         <div className="bg-gray-100 p-6 rounded-xl shadow-inner space-y-4">
                             <h3 className="text-lg font-bold">{editingPayment === 'new' ? 'Add New Transaction' : 'Edit Transaction'}</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                                <FlexibleVendorInput
-                                    value={formData.vendors || ''}
-                                    onChange={handleVendorChange}
-                                    onNewVendor={handleNewVendor}
-                                    options={validationData.vendors}
-                                    placeholder="Select or type vendor name..."
-                                    className="p-2"
-                                    allowNew={true}
-                                    validationService={vendorDiscoveryService}
-                                />
-                                <input type="text" name="invoiceNumber" placeholder="Invoice #" value={formData.invoiceNumber || ''} onChange={handleChange} className="p-2 border rounded-md" />
-                                <input type="text" name="descriptions" placeholder="Description" value={formData.descriptions || ''} onChange={handleChange} className="p-2 border rounded-md" />
-                                <input type="number" name="amount" placeholder="Amount" value={formData.amount || ''} onChange={handleChange} className="p-2 border rounded-md" />
-                                <select name="paymentMode" value={formData.paymentMode || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Payment Mode</option>
-                                    {validationData.paymentModes.length > 0 ? (
-                                        validationData.paymentModes.map((modeOption, index) => (
-                                            <option key={modeOption.id || index} value={modeOption.value}>
-                                                {modeOption.value}
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <option value="" disabled>No payment modes available</option>
-                                    )}
-                                </select>
-                                <select name="procurement" value={formData.procurement || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Procurement</option>
-                                    {validationData.procurementTypes.length > 0 ? (
-                                        validationData.procurementTypes.map((typeOption, index) => (
-                                            <option key={typeOption.id || index} value={typeOption.value}>
-                                                {typeOption.value}
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <option value="" disabled>No procurement types available</option>
-                                    )}
-                                </select>
-                                <select name="taxType" value={formData.taxType || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Tax Type</option>
-                                    {validationData.taxTypes.length > 0 ? (
-                                        validationData.taxTypes.map((typeOption, index) => (
-                                            <option key={typeOption.id || index} value={typeOption.value}>
-                                                {typeOption.value}
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <option value="" disabled>No tax types available</option>
-                                    )}
-                                </select>
-                                <select name="vat" value={formData.vat || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">VAT</option>
-                                    {vatOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                </select>
-                                <select name="budgetLines" value={formData.budgetLines || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Budget Line</option>
-                                    {validationData.budgetLines.length > 0 ? (
-                                        validationData.budgetLines.map((budgetLineOption, index) => (
-                                            <option key={budgetLineOption.id || index} value={budgetLineOption.value}>
-                                                {budgetLineOption.value} - {budgetLineOption.description || `${budgetLineOption.accountNo} - ${budgetLineOption.deptCode}`}
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <option value="" disabled>No budget lines available</option>
-                                    )}
-                                </select>
-                                <select name="currency" value={formData.currency || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Currency</option>
-                                    {validationData.currencies.length > 0 ? (
-                                        validationData.currencies.map((currencyOption, index) => (
-                                            <option key={currencyOption.id || index} value={currencyOption.value}>
-                                                {currencyOption.value}
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <option value="GHS">GHS</option>
-                                    )}
-                                </select>
-                                <input type="number" name="fxRate" placeholder="FX Rate" value={formData.fxRate || ''} onChange={handleChange} className="p-2 border rounded-md" />
-                                <select name="bank" value={formData.bank || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Bank</option>
-                                    {validationData.banks.length > 0 ? (
-                                        validationData.banks.map((bankOption, index) => (
-                                            <option key={bankOption.id || index} value={bankOption.value}>
-                                                {bankOption.value}
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <option value="" disabled>No banks available</option>
-                                    )}
-                                </select>
-                                <input type="text" name="momoCharge" placeholder="Momo Charge %" value={formData.momoCharge || ''} onChange={handleChange} className="p-2 border rounded-md" />
+                                {/* Vendor */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
+                                    <FlexibleVendorInput
+                                        value={formData.vendors || ''}
+                                        onChange={handleVendorChange}
+                                        onNewVendor={handleNewVendor}
+                                        options={validationData.vendors}
+                                        placeholder="Select or type vendor name..."
+                                        className="p-2 w-full"
+                                        allowNew={true}
+                                        validationService={vendorDiscoveryService}
+                                    />
+                                </div>
 
-                                <select name="department" value={formData.department || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Department</option>
-                                    {validationData.departments.length > 0 ? (
-                                        validationData.departments.map((opt, index) => (
-                                            <option key={opt.id || index} value={opt.value}>{opt.value}</option>
-                                        ))
-                                    ) : (
-                                        <option value="" disabled>No departments available</option>
-                                    )}
-                                </select>
+                                {/* Invoice Number */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Invoice Number</label>
+                                    <input type="text" name="invoiceNumber" placeholder="Invoice #" value={formData.invoiceNumber || ''} onChange={handleChange} className="p-2 border rounded-md w-full" />
+                                </div>
 
-                                <select name="paymentPriority" value={formData.paymentPriority || ''} onChange={handleChange} className="p-2 border rounded-md">
-                                    <option value="">Priority</option>
-                                    {validationData.paymentPriorities.length > 0 ? (
-                                        validationData.paymentPriorities.map((opt, index) => (
-                                            <option key={opt.id || index} value={opt.value}>{opt.value}</option>
-                                        ))
-                                    ) : (
-                                        <option value="" disabled>No priorities available</option>
-                                    )}
-                                </select>
+                                {/* Description */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                    <input type="text" name="descriptions" placeholder="Description" value={formData.descriptions || ''} onChange={handleChange} className="p-2 border rounded-md w-full" />
+                                </div>
+
+                                {/* Amount */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                                    <input type="number" name="amount" placeholder="Amount" value={formData.amount || ''} onChange={handleChange} className="p-2 border rounded-md w-full" />
+                                </div>
+
+                                {/* Payment Mode */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode</label>
+                                    <select name="paymentMode" value={formData.paymentMode || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Payment Mode</option>
+                                        {validationData.paymentModes.length > 0 ? (
+                                            validationData.paymentModes.map((modeOption, index) => (
+                                                <option key={modeOption.id || index} value={modeOption.value}>
+                                                    {modeOption.value}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No payment modes available</option>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* Procurement Type */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Procurement Type</label>
+                                    <select name="procurement" value={formData.procurement || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Procurement</option>
+                                        {validationData.procurementTypes.length > 0 ? (
+                                            validationData.procurementTypes.map((typeOption, index) => (
+                                                <option key={typeOption.id || index} value={typeOption.value}>
+                                                    {typeOption.value}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No procurement types available</option>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* Tax Type */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Tax Type</label>
+                                    <select name="taxType" value={formData.taxType || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Tax Type</option>
+                                        {validationData.taxTypes.length > 0 ? (
+                                            validationData.taxTypes.map((typeOption, index) => (
+                                                <option key={typeOption.id || index} value={typeOption.value}>
+                                                    {typeOption.value}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No tax types available</option>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* VAT Status */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">VAT Status</label>
+                                    <select name="vat" value={formData.vat || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select VAT Status</option>
+                                        {vatOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                    </select>
+                                </div>
+
+                                {/* Budget Line */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Budget Line</label>
+                                    <select name="budgetLines" value={formData.budgetLines || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Budget Line</option>
+                                        {validationData.budgetLines.length > 0 ? (
+                                            validationData.budgetLines.map((budgetLineOption, index) => (
+                                                <option key={budgetLineOption.id || index} value={budgetLineOption.value}>
+                                                    {budgetLineOption.value} - {budgetLineOption.description || `${budgetLineOption.accountNo} - ${budgetLineOption.deptCode}`}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No budget lines available</option>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* Currency */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+                                    <select name="currency" value={formData.currency || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Currency</option>
+                                        {validationData.currencies.length > 0 ? (
+                                            validationData.currencies.map((currencyOption, index) => (
+                                                <option key={currencyOption.id || index} value={currencyOption.value}>
+                                                    {currencyOption.value}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="GHS">GHS</option>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* FX Rate */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">FX Rate</label>
+                                    <input type="number" name="fxRate" placeholder="FX Rate" value={formData.fxRate || ''} onChange={handleChange} className="p-2 border rounded-md w-full" />
+                                </div>
+
+                                {/* Bank */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Bank</label>
+                                    <select name="bank" value={formData.bank || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Bank</option>
+                                        {validationData.banks.length > 0 ? (
+                                            validationData.banks.map((bankOption, index) => (
+                                                <option key={bankOption.id || index} value={bankOption.value}>
+                                                    {bankOption.value}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No banks available</option>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* Momo Charge % */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Momo Charge %</label>
+                                    <input type="text" name="momoCharge" placeholder="Momo Charge %" value={formData.momoCharge || ''} onChange={handleChange} className="p-2 border rounded-md w-full" />
+                                </div>
+
+                                {/* Department */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
+                                    <select name="department" value={formData.department || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Department</option>
+                                        {validationData.departments.length > 0 ? (
+                                            validationData.departments.map((opt, index) => (
+                                                <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No departments available</option>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* Payment Priority */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Priority</label>
+                                    <select name="paymentPriority" value={formData.paymentPriority || ''} onChange={handleChange} className="p-2 border rounded-md w-full">
+                                        <option value="">Select Priority</option>
+                                        {validationData.paymentPriorities.length > 0 ? (
+                                            validationData.paymentPriorities.map((opt, index) => (
+                                                <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                                            ))
+                                        ) : (
+                                            <option value="" disabled>No priorities available</option>
+                                        )}
+                                    </select>
+                                </div>
 
                                 {/* CORE WHT INTEGRATION: WHT Rate Display */}
                                 {formData.procurement && formData.currency === 'GHS' && (
@@ -830,7 +911,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.fxRate}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.bank}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                                    {payment.whtRate ? `${payment.whtRate}%` : '-'}
+                                                    {payment.whtRate ? `${(Number(payment.whtRate) * 100).toFixed(1).replace(/\.0$/, '')}%` : '-'}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                                                     {payment.whtAmount ? safeToFixed(payment.whtAmount) : '-'}

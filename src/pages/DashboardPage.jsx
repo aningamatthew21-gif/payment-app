@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { Settings, LogOut, CreditCard, LayoutDashboard, FileSpreadsheet, FileText } from 'lucide-react';
+import { Settings, LogOut, CreditCard, LayoutDashboard, FileSpreadsheet, FileText, Landmark, Users } from 'lucide-react';
 import Layout from '../components/Layout/Layout';
 import DocumentGenerator from '../components/DocumentGenerator';
 import TestSettingsPanel from '../components/TestSettingsPanel';
@@ -28,12 +28,20 @@ const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTe
 
                 querySnapshot.forEach(doc => {
                     const budgetLine = doc.data();
-                    // Calculate totals from monthly values
-                    const totalBudget = budgetLine.monthlyValues?.reduce((sum, val) => sum + Math.abs(val), 0) || 0;
-                    const totalSpent = budgetLine.monthlyValues?.filter(val => val < 0).reduce((sum, val) => sum + Math.abs(val), 0) || 0;
 
-                    total += totalBudget;
-                    spent += totalSpent;
+                    // 1. Calculate Total Allocated (Budget)
+                    // Sum of absolute values of monthlyValues array
+                    const allocated = budgetLine.monthlyValues?.reduce((sum, val) => sum + Math.abs(val || 0), 0) || 0;
+
+                    // 2. Calculate Total Spent
+                    // Use existing tracking fields, similar to BudgetManagementPage logic
+                    const spentAmount = Math.abs(budgetLine.totalSpent || budgetLine.totalSpendToDate || 0);
+
+                    // 3. Calculate Available
+                    const remaining = allocated - spentAmount;
+
+                    total += allocated;
+                    spent += spentAmount;
                 });
 
                 setBudgetSummary({
@@ -122,6 +130,20 @@ const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTe
                     >
                         <Settings size={24} />
                         <span>Budget Management</span>
+                    </button>
+                    <button
+                        onClick={() => onNavigate('bankManagement')}
+                        className="w-full p-4 bg-teal-600 text-white font-semibold rounded-md text-lg hover:bg-teal-700 transition-colors flex items-center justify-center space-x-2"
+                    >
+                        <Landmark size={24} />
+                        <span>Bank Management</span>
+                    </button>
+                    <button
+                        onClick={() => onNavigate('vendorManagement')}
+                        className="w-full p-4 bg-cyan-600 text-white font-semibold rounded-md text-lg hover:bg-cyan-700 transition-colors flex items-center justify-center space-x-2"
+                    >
+                        <Users size={24} />
+                        <span>Vendor Management</span>
                     </button>
                     <button
                         onClick={() => onNavigate('masterLogDashboard')}

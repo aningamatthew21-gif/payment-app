@@ -2,7 +2,7 @@
 import { PaymentContext, actionTypes } from '../contexts/PaymentContext';
 import { useSettings } from '../contexts/SettingsContext';
 import { calculatePayment } from '../services/FinancialEngine';
-import { collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, getDocs } from 'firebase/firestore';
+import { collection, addDoc, deleteDoc, doc, updateDoc, onSnapshot, getDocs, runTransaction, query, limit } from 'firebase/firestore';
 import {
   stagePayment,
   removePaymentFromBatch,
@@ -11,7 +11,7 @@ import {
   uploadSupportDocuments,
   updateWeeklySheetTransaction,
   addTransactionToWeeklySheet
-} from '../services/PaymentService';
+} from '../services/paymentService';
 import { WHTEnhancedService } from '../services/WHTEnhancedService.js';
 import {
   PAYMENT_MODES,
@@ -26,6 +26,7 @@ import { ProcurementTypesService } from '../services/ProcurementTypesService.js'
 import { DocumentGenerationService } from '../services/DocumentGenerationService';
 import { VoucherBalanceService } from '../services/VoucherBalanceService';
 import { PaymentFinalizationService } from '../services/PaymentFinalizationService';
+import { VendorService } from '../services/VendorService';
 import ProcessingStatusModal from './ProcessingStatusModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -105,6 +106,8 @@ const PaymentGenerator = ({
   const { state, dispatch } = useContext(PaymentContext);
   const { globalRates, companySettings } = useSettings();
   const [selectedSheetId, setSelectedSheetId] = useState(weeklySheetId || '');
+  // FIX: Local state for instant UI updates
+  const [localAvailablePayments, setAvailablePayments] = useState(availablePayments || []);
 
   // Sync local state with prop
   useEffect(() => {
@@ -112,6 +115,13 @@ const PaymentGenerator = ({
       setSelectedSheetId(weeklySheetId);
     }
   }, [weeklySheetId]);
+
+  // FIX: Sync local state when prop changes
+  useEffect(() => {
+    if (availablePayments) {
+      setAvailablePayments(availablePayments);
+    }
+  }, [availablePayments]);
 
   const {
     stagedPayments,
@@ -169,7 +179,9 @@ const PaymentGenerator = ({
     try {
       console.log('Loading validation data for PaymentGenerator...');
       const validationRef = collection(db, `artifacts/${appId}/public/data/validation`);
-      const querySnapshot = await getDocs(validationRef);
+      // Optimization: Limit to 500 to prevent browser freeze on large datasets
+      const q = query(validationRef, limit(500));
+      const querySnapshot = await getDocs(q);
 
       const data = {
         paymentModes: [],
@@ -210,7 +222,9 @@ const PaymentGenerator = ({
       // Load enhanced budget line data
       try {
         const budgetRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
-        const budgetQuerySnapshot = await getDocs(budgetRef);
+        // Optimization: Limit budget lines as well
+        const budgetQ = query(budgetRef, limit(500));
+        const budgetQuerySnapshot = await getDocs(budgetQ);
         budgetQuerySnapshot.forEach(doc => {
           const budgetLine = doc.data();
           if (budgetLine.name) {
@@ -241,6 +255,21 @@ const PaymentGenerator = ({
         }
       } catch (whtError) {
         console.warn('Error loading procurement types:', whtError);
+      }
+
+      // Load vendors from VendorService
+      try {
+        const vendors = await VendorService.getAllVendors(db, appId);
+        data.vendors = vendors.map(v => ({
+          id: v.id,
+          value: v.name,
+          description: v.banking?.bankName ? `${v.banking.bankName} - ${v.banking.accountNumber}` : '',
+          isActive: v.status === 'active',
+          // Store full vendor object for later use
+          fullObject: v
+        }));
+      } catch (vendorError) {
+        console.error('Error loading vendors:', vendorError);
       }
 
       setValidationData(data);
@@ -370,6 +399,25 @@ const PaymentGenerator = ({
     dispatch
   ]);
 
+  // Update bank details when vendor changes
+  useEffect(() => {
+    if (vendor && validationData.vendors.length > 0) {
+      const selectedVendor = validationData.vendors.find(v => v.value === vendor);
+      if (selectedVendor && selectedVendor.fullObject && selectedVendor.fullObject.banking) {
+        const banking = selectedVendor.fullObject.banking;
+        // Auto-populate bank details if available
+        // We might want to store this in a separate field or append to description if needed
+        // For now, let's log it to confirm it works
+        console.log('Selected Vendor Banking Details:', banking);
+
+        // If you want to auto-fill the Bank field in the form:
+        if (banking.bankName) {
+          dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'bank', value: banking.bankName } });
+        }
+      }
+    }
+  }, [vendor, validationData.vendors, dispatch]);
+
   const handleAvailablePaymentSelect = async (index) => {
     dispatch({ type: actionTypes.SET_SELECTED_AVAILABLE, payload: index });
     const payment = availablePayments[index];
@@ -446,6 +494,19 @@ const PaymentGenerator = ({
       // Proceed without syncing
     }
 
+    // 2. Upload Support Documents
+    let uploadedDocs = [];
+    if (state.supportDocuments && state.supportDocuments.length > 0) {
+      const tempId = selectedAvailable !== null ? availablePayments[selectedAvailable].id : `temp_${Date.now()}`;
+      try {
+        uploadedDocs = await uploadSupportDocuments(state.supportDocuments.map(d => d.file), tempId);
+      } catch (uploadError) {
+        console.warn("Support document upload failed (likely CORS), proceeding without attachments:", uploadError);
+        // Proceed without uploaded docs
+      }
+    }
+
+    // 3. Construct Base Payment Payload (The "Truth" Object)
     const newPayment = {
       date: new Date().toISOString().slice(0, 10),
       vendor,
@@ -465,12 +526,13 @@ const PaymentGenerator = ({
       procurementType,
       taxType,
       vatDecision,
-      fxRate,
-      whtAmount: whtAmount.toFixed(2),
-      levyAmount: levyAmount.toFixed(2),
-      vatAmount: vatAmount.toFixed(2),
-      momoCharge: momoCharge.toFixed(2),
-      budgetImpactUSD: budgetImpactUSD.toFixed(2),
+      fxRate: Number(fxRate),
+      whtAmount: Number(whtAmount),
+      whtRate: Number(whtRate),
+      levyAmount: Number(levyAmount),
+      vatAmount: Number(vatAmount),
+      momoCharge: Number(momoCharge),
+      budgetImpactUSD: Number(budgetImpactUSD),
       status: 'staged',
       timestamp: new Date().toISOString(),
       // Add weekly sheet reference for tracking
@@ -483,30 +545,100 @@ const PaymentGenerator = ({
       preparedBy,
       paymentPriority,
       approvalNotes,
-      bank
+      bank,
+      supportDocuments: uploadedDocs,
+      // Attach Vendor Banking Details for Document Generation
+      vendorBanking: validationData.vendors.find(v => v.value === vendor)?.fullObject?.banking || null
     };
 
-    // 2. Upload Support Documents
-    let uploadedDocs = [];
-    if (state.supportDocuments && state.supportDocuments.length > 0) {
-      const tempId = selectedAvailable !== null ? availablePayments[selectedAvailable].id : `temp_${Date.now()}`;
-      try {
-        uploadedDocs = await uploadSupportDocuments(state.supportDocuments.map(d => d.file), tempId);
-        newPayment.supportDocuments = uploadedDocs;
-      } catch (uploadError) {
-        console.warn("Support document upload failed (likely CORS), proceeding without attachments:", uploadError);
-        // Proceed without uploaded docs
-      }
-    }
-
-    // 3. Sync with Firestore
+    // 4. Sync with Firestore
     if (sheetName) {
       if (selectedAvailable !== null) {
-        // Existing payment -> Update
+        // Existing payment -> Update with All-Fields Sync Protocol
         const originalPayment = availablePayments[selectedAvailable];
-        await updateWeeklySheetTransaction(db, appId, sheetName, originalPayment.id, newPayment);
-        console.log('Updated existing transaction:', originalPayment.id);
-        return { ...newPayment, id: originalPayment.id };
+
+        // --- ALL-FIELDS SYNC PROTOCOL START ---
+        // 2. DEFINE FIELDS TO MONITOR
+        const fieldsToMonitor = {
+          vendor: "Vendor",
+          invoiceNo: "Invoice No",
+          description: "Description",
+          paymentMode: "Payment Mode",
+          bank: "Bank",
+          procurementType: "Procurement Type",
+          taxType: "Tax Type",
+          currency: "Currency",
+          vatDecision: "VAT Decision"
+        };
+
+        // 3. CHANGE DETECTION & AUDIT NOTE GENERATION
+        let changes = [];
+
+        // Check text/dropdown fields
+        Object.entries(fieldsToMonitor).forEach(([field, label]) => {
+          const currentValues = {
+            vendor, invoiceNo, description, paymentMode, bank,
+            procurementType, taxType, currency, vatDecision
+          };
+
+          const oldValue = originalPayment[field] || "";
+          const newValue = currentValues[field] || "";
+
+          // Simple string comparison (ignoring slight whitespace differences)
+          if (String(oldValue).trim() !== String(newValue).trim()) {
+            changes.push(`${label}: "${oldValue}" -> "${newValue}"`);
+          }
+        });
+
+        // Check Amount Separately (Number comparison)
+        const newNetPayable = Number(amountThisTransaction || 0);
+        const oldNetPayable = Number(originalPayment.netPayable || originalPayment.amount || 0);
+        const amountDiff = newNetPayable - oldNetPayable;
+
+        if (Math.abs(amountDiff) > 0.001) { // Floating point safety
+          changes.push(`Amount: ${oldNetPayable.toLocaleString()} -> ${newNetPayable.toLocaleString()}`);
+        }
+
+        // 4. CONSTRUCT AUDIT NOTE
+        let correctionNote = originalPayment.modificationNote || "";
+        if (changes.length > 0) {
+          const timestamp = new Date().toLocaleTimeString();
+          const changeLog = `[${timestamp}] Corrections: ${changes.join(', ')}`;
+
+          // Append to existing notes
+          correctionNote = correctionNote ? `${correctionNote} | ${changeLog}` : changeLog;
+          console.log("Audit Log Generated:", changeLog);
+        }
+
+        // 5. PREPARE THE "TRUTH" OBJECT (ALL FIELDS)
+        const paymentUpdatePayload = {
+          ...newPayment, // Use the base payload constructed above
+          id: originalPayment.id,
+
+          // Audit Metadata
+          lastUpdated: new Date().toISOString(),
+          updatedBy: userId,
+          modificationNote: correctionNote,
+        };
+
+        console.log("Syncing Complete Payment Data:", paymentUpdatePayload);
+
+        // 6. ATOMIC UPDATE (Write-Back to Source)
+        await updateWeeklySheetTransaction(db, appId, sheetName, originalPayment.id, paymentUpdatePayload);
+        console.log('Updated existing transaction with sync protocol:', originalPayment.id);
+
+        // 7. INSTANT UI REFRESH (The Fix)
+        setAvailablePayments(prevPayments =>
+          prevPayments.map(payment =>
+            payment.id === originalPayment.id
+              ? { ...payment, ...paymentUpdatePayload } // Merge new data
+              : payment // Keep others same
+          )
+        );
+
+        return paymentUpdatePayload;
+        // --- ALL-FIELDS SYNC PROTOCOL END ---
+
       } else {
         // New payment -> Add
         const newId = await addTransactionToWeeklySheet(db, appId, sheetName, newPayment);
@@ -780,7 +912,7 @@ const PaymentGenerator = ({
     }
 
     try {
-      await finalizeSchedule(db, appId, userId, stagedPayments, weeklySheetId);
+      await finalizeSchedule(db, appId, userId, weeklySheetId);
       await handleClearBatch();
       alert("Payment schedule finalized successfully!");
     } catch (error) {
@@ -887,7 +1019,7 @@ const PaymentGenerator = ({
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {availablePayments
+                    {localAvailablePayments
                       .filter(payment => {
                         // Filter out fully paid payments
                         // Check both payment_status AND legacy paid boolean
@@ -903,7 +1035,7 @@ const PaymentGenerator = ({
                       })
                       .map((payment, index) => {
                         const isPartial = payment.payment_status === 'partial';
-                        const originalIndex = availablePayments.indexOf(payment); // Keep track of original index for selection
+                        const originalIndex = localAvailablePayments.indexOf(payment); // Keep track of original index for selection
 
                         return (
                           <tr
