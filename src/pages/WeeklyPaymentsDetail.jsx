@@ -27,6 +27,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
     const [showUndoPanel, setShowUndoPanel] = useState(false);
     const [showPaymentStaging, setShowPaymentStaging] = useState(false);
     const [showExcelModal, setShowExcelModal] = useState(false);
+    const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'partial' | 'paid'
 
     // Vendor discovery service instance for this component
     const vendorDiscoveryService = useMemo(() => {
@@ -365,32 +366,83 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
 
 
 
-    // --- NEW: Helper to determine status color and label ---
-    const getStatusBadge = (payment) => {
-        // 1. Get status from the field updated by PaymentFinalizationService
-        // 2. Fallback to legacy boolean 'paid' field if 'payment_status' is missing
-        let status = 'pending';
+    // --- Helper functions for partial payment display ---
+    const calculateRemainingBalance = (payment) => {
+        const total = Number(payment.total_amount || payment.fullPretax || payment.amount || 0);
+        const paid = Number(payment.paid_amount || 0);
+        return Math.max(0, total - paid);
+    };
 
+    const calculatePaidPercentage = (payment) => {
+        const total = Number(payment.total_amount || payment.fullPretax || payment.amount || 0);
+        if (total === 0) return 0;
+        const paid = Number(payment.paid_amount || 0);
+        return Math.min(100, (paid / total) * 100);
+    };
+
+    const calculateRemainingPercentage = (payment) => {
+        return 100 - calculatePaidPercentage(payment);
+    };
+
+    const getPaymentStatus = (payment) => {
+        // Priority 1: Use explicit payment_status if set
         if (payment.payment_status) {
-            status = payment.payment_status.toLowerCase();
-        } else if (payment.paid === true) {
-            status = 'paid';
+            return payment.payment_status.toLowerCase();
         }
+        // Priority 2: Check isPartialPayment flag (set by PaymentGenerator)
+        if (payment.isPartialPayment && payment.paymentPercentage && payment.paymentPercentage < 100) {
+            // Check if it's been finalized but still has remaining balance
+            const total = Number(payment.total_amount || payment.fullPretax || payment.amount || 0);
+            const paid = Number(payment.paid_amount || 0);
+            if (paid > 0 && paid < total) {
+                return 'partial';
+            }
+        }
+        // Priority 3: Legacy boolean 'paid' field
+        if (payment.paid === true) {
+            return 'paid';
+        }
+        return 'pending';
+    };
+
+    // Filter payments based on status
+    const filteredPayments = useMemo(() => {
+        if (statusFilter === 'all') return payments;
+        return payments.filter(p => getPaymentStatus(p) === statusFilter);
+    }, [payments, statusFilter]);
+
+    // --- Enhanced status badge with percentage ---
+    const getStatusBadge = (payment) => {
+        const status = getPaymentStatus(payment);
+        const paidPercent = calculatePaidPercentage(payment);
+        const remainingBalance = calculateRemainingBalance(payment);
 
         // Determine styles based on status
         const styles = {
             paid: 'bg-green-100 text-green-800 border-green-200',
             partial: 'bg-yellow-100 text-yellow-800 border-yellow-200',
             pending: 'bg-gray-100 text-gray-800 border-gray-200',
-            finalized: 'bg-blue-100 text-blue-800 border-blue-200' // Catch-all for finalized but not fully paid
+            finalized: 'bg-blue-100 text-blue-800 border-blue-200'
         };
 
         const currentStyle = styles[status] || styles.pending;
-        const label = status === 'partial' ? 'PARTIAL' : status.toUpperCase();
+
+        if (status === 'partial') {
+            return (
+                <div className="flex flex-col items-center">
+                    <span className={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full border ${currentStyle}`}>
+                        PARTIAL {paidPercent.toFixed(0)}%
+                    </span>
+                    <span className="text-xs text-orange-600 mt-1">
+                        Remaining: {safeToFixed(remainingBalance)}
+                    </span>
+                </div>
+            );
+        }
 
         return (
             <span className={`px-3 py-1 inline-flex text-xs leading-5 font-bold rounded-full border ${currentStyle}`}>
-                {label}
+                {status.toUpperCase()}
             </span>
         );
     };
@@ -866,7 +918,36 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                         </div>
                     )}
 
-                    <h3 className="text-xl font-bold pt-4">Payments List</h3>
+                    {/* Payments List Header with Filter */}
+                    <div className="flex justify-between items-center pt-4 mb-2">
+                        <h3 className="text-xl font-bold">Payments List</h3>
+                        <div className="flex items-center space-x-4">
+                            {/* Status Filter */}
+                            <div className="flex items-center space-x-2">
+                                <label className="text-sm font-medium text-gray-600">Filter:</label>
+                                <select
+                                    value={statusFilter}
+                                    onChange={(e) => setStatusFilter(e.target.value)}
+                                    className="p-2 border rounded-md text-sm bg-white"
+                                >
+                                    <option value="all">All Payments ({payments.length})</option>
+                                    <option value="pending">Pending ({payments.filter(p => getPaymentStatus(p) === 'pending').length})</option>
+                                    <option value="partial">Partial ({payments.filter(p => getPaymentStatus(p) === 'partial').length})</option>
+                                    <option value="paid">Paid ({payments.filter(p => getPaymentStatus(p) === 'paid').length})</option>
+                                </select>
+                            </div>
+                            {/* Count badges */}
+                            <div className="flex space-x-2 text-xs">
+                                <span className="px-2 py-1 bg-gray-100 rounded">Total: {payments.length}</span>
+                                <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded">
+                                    Partial: {payments.filter(p => getPaymentStatus(p) === 'partial').length}
+                                </span>
+                                <span className="px-2 py-1 bg-green-100 text-green-800 rounded">
+                                    Paid: {payments.filter(p => getPaymentStatus(p) === 'paid').length}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
                     <div className="bg-gray-50 border border-gray-300 rounded-md overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200">
@@ -896,22 +977,22 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                     </tr>
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
-                                    {payments.map((payment, index) => {
+                                    {filteredPayments.map((payment, index) => {
                                         return (
-                                            <tr key={index} className={`hover:bg-gray-50 ${payment.payment_status === 'paid' ? 'bg-green-50' : payment.payment_status === 'partial' ? 'bg-yellow-50' : ''}`}>
+                                            <tr key={index} className={`hover:bg-gray-50 ${getPaymentStatus(payment) === 'paid' ? 'bg-green-50' : getPaymentStatus(payment) === 'partial' ? 'bg-yellow-50' : ''}`}>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                                     <div className="flex space-x-2">
                                                         <button
                                                             onClick={() => handleEditClick(payment)}
                                                             className="text-indigo-600 hover:text-indigo-900"
-                                                            disabled={payment.payment_status === 'paid'}
+                                                            disabled={getPaymentStatus(payment) === 'paid'}
                                                         >
                                                             <Edit size={16} />
                                                         </button>
                                                         <button
                                                             onClick={() => handleDelete(payment.id)}
                                                             className="text-red-600 hover:text-red-900"
-                                                            disabled={payment.payment_status === 'paid'}
+                                                            disabled={getPaymentStatus(payment) === 'paid'}
                                                         >
                                                             <Trash2 size={16} />
                                                         </button>

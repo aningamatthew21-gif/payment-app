@@ -172,6 +172,15 @@ const PaymentGenerator = ({
     signatories: []
   });
 
+  // Overpayment prevention: track maximum allowed percentage
+  const [maxPaymentPercentage, setMaxPaymentPercentage] = useState(100);
+  const [selectedPaymentInfo, setSelectedPaymentInfo] = useState({
+    totalAmount: 0,
+    paidAmount: 0,
+    remainingAmount: 0,
+    hasPartialHistory: false
+  });
+
   // Load validation data function
   const loadValidationData = async () => {
     if (!db || !userId || !appId) return;
@@ -495,26 +504,32 @@ const PaymentGenerator = ({
     const paidAmount = Number(payment.paid_amount || 0);
     const isPartial = payment.payment_status === 'partial' || (paidAmount > 0 && paidAmount < totalAmount);
 
+    // Calculate remaining amount (always needed for display)
+    const remainingAmount = totalAmount - paidAmount;
+    let maxPercentage = 100;
+    if (totalAmount > 0) {
+      maxPercentage = (remainingAmount / totalAmount) * 100;
+    }
+    maxPercentage = Number(maxPercentage.toFixed(2));
+
+    // Set payment info for UI display
+    setSelectedPaymentInfo({
+      totalAmount,
+      paidAmount,
+      remainingAmount,
+      hasPartialHistory: paidAmount > 0
+    });
+    setMaxPaymentPercentage(maxPercentage);
+
     if (isPartial) {
-      const remainingAmount = totalAmount - paidAmount;
-      // Calculate remaining percentage based on TOTAL amount
-      // Formula: (Remaining / Total) * 100
-      let remainingPercentage = 100;
-      if (totalAmount > 0) {
-        remainingPercentage = (remainingAmount / totalAmount) * 100;
-      }
-
-      // Ensure we don't have floating point weirdness (e.g. 33.333333333%)
-      remainingPercentage = Number(remainingPercentage.toFixed(2));
-
       console.log('[PaymentGenerator] Partial Payment Selected:', {
         totalAmount,
         paidAmount,
         remainingAmount,
-        remainingPercentage
+        maxPercentage
       });
 
-      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: remainingPercentage } });
+      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: maxPercentage } });
       dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'isPartialPayment', value: true } });
     } else {
       // Full payment (default)
@@ -543,6 +558,13 @@ const PaymentGenerator = ({
     }
 
     // 3. Construct Base Payment Payload (The "Truth" Object)
+    // Get original full amount from selected payment (for partial payment tracking)
+    const originalPaymentData = selectedAvailable !== null ? availablePayments[selectedAvailable] : null;
+    const originalFullAmount = originalPaymentData
+      ? Number(originalPaymentData.total_amount || originalPaymentData.fullPretax || originalPaymentData.amount || preTaxAmount)
+      : Number(preTaxAmount);
+    const previousPaidAmount = originalPaymentData ? Number(originalPaymentData.paid_amount || 0) : 0;
+
     const newPayment = {
       date: new Date().toISOString().slice(0, 10),
       vendor,
@@ -553,6 +575,14 @@ const PaymentGenerator = ({
       netPayable: Number(amountThisTransaction || 0),
       amountThisTransaction: Number(amountThisTransaction || 0),
       pretaxAmount: Number(preTaxAmount || 0),
+
+      // ✅ NEW - Partial payment tracking fields
+      fullPretax: originalFullAmount, // Original FULL invoice pre-tax amount
+      total_amount: originalFullAmount, // Original FULL invoice amount (for status calculation)
+      paid_amount: previousPaidAmount, // What was paid BEFORE this transaction (will be updated on finalization)
+      isPartialPayment: isPartialPayment,
+      paymentPercentage: paymentPercentage,
+      payment_status: 'pending', // Will be updated to 'partial' or 'paid' on finalization
 
       budgetItem: budgetLine,
       // Enhanced data fields for better tracking
@@ -1218,18 +1248,49 @@ const PaymentGenerator = ({
                     onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'isPartialPayment', value: e.target.checked } })}
                     className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                   />
+                  {/* Show prior payment info if this is a partial payment */}
+                  {selectedPaymentInfo.hasPartialHistory && (
+                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
+                      <p className="font-medium text-yellow-800">⚠️ Previous Partial Payment Detected</p>
+                      <div className="text-yellow-700 mt-1 space-y-1">
+                        <p>Total Invoice: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                        <p>Already Paid: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                        <p className="font-bold">Remaining: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({maxPaymentPercentage}%)</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Percentage to Pay (%)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Percentage to Pay (%)
+                    {maxPaymentPercentage < 100 && (
+                      <span className="text-orange-600 ml-2">Max: {maxPaymentPercentage}%</span>
+                    )}
+                  </label>
                   <input
                     type="number"
                     value={paymentPercentage}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: Number(e.target.value) } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    onChange={(e) => {
+                      const newValue = Number(e.target.value);
+                      // Overpayment prevention
+                      if (newValue > maxPaymentPercentage) {
+                        alert(`Cannot pay more than ${maxPaymentPercentage.toFixed(1)}% (remaining balance)`);
+                        dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: maxPaymentPercentage } });
+                      } else {
+                        dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: newValue } });
+                      }
+                    }}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${paymentPercentage > maxPaymentPercentage ? 'border-red-500' : 'border-gray-300'
+                      }`}
                     placeholder="100"
                     min="1"
-                    max="100"
+                    max={maxPaymentPercentage}
                   />
+                  {paymentPercentage > maxPaymentPercentage && (
+                    <p className="text-red-600 text-sm mt-1">
+                      ⚠️ Exceeds remaining balance! Max allowed: {maxPaymentPercentage}%
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Payment Mode</label>

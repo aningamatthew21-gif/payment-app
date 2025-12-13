@@ -2,6 +2,37 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { PDFDocument } from 'pdf-lib';
 
+// Helper functions for consistent field access across different payment object structures
+const getNetPayable = (payment) => {
+    // Priority order: netPayable > amountThisTransaction > amount > fullPretax
+    const value = payment.netPayable || payment.amountThisTransaction || payment.amount || payment.fullPretax || 0;
+    return parseFloat(value) || 0;
+};
+
+const getPreTaxAmount = (payment) => {
+    // Priority order: fullPretax > preTaxAmount > pretaxAmount > amount
+    const value = payment.fullPretax || payment.preTaxAmount || payment.pretaxAmount || payment.amount || 0;
+    return parseFloat(value) || 0;
+};
+
+const getBudgetLineName = (payment) => {
+    // Try to get from budgetData first, then from payment fields
+    if (payment.budgetData) {
+        return payment.budgetData.budgetLineName || payment.budgetData.budgetLine || 'N/A';
+    }
+    return payment.budgetLine || payment.budgetItem || 'N/A';
+};
+
+const formatCurrency = (amount, currency = 'GHS') => {
+    const num = parseFloat(amount) || 0;
+    return `${currency} ${num.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+};
+
+const formatUSD = (amount) => {
+    const num = parseFloat(amount) || 0;
+    return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
+};
+
 export const DocumentGenerationService = {
     /**
      * Generates a Payment Voucher PDF
@@ -32,11 +63,14 @@ export const DocumentGenerationService = {
         doc.text(`Bank: ${payment.bank || 'N/A'}`, 15, 69);
 
         // --- Payment Details Table ---
+        const netPayable = getNetPayable(payment);
+        const preTaxAmount = getPreTaxAmount(payment);
+
         autoTable(doc, {
             startY: 80,
-            head: [['Description', 'Amount']],
+            head: [['Description', 'Pre-Tax Amount', 'Net Payable']],
             body: [
-                [payment.description, `${payment.currency} ${parseFloat(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`]
+                [payment.description || 'N/A', formatCurrency(preTaxAmount, payment.currency), formatCurrency(netPayable, payment.currency)]
             ],
             theme: 'grid',
             headStyles: { fillColor: [66, 66, 66] },
@@ -68,7 +102,7 @@ export const DocumentGenerationService = {
         // --- Net Payable ---
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text(`NET PAYABLE: ${payment.currency} ${parseFloat(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, pageWidth - 15, finalY, { align: 'right' });
+        doc.text(`NET PAYABLE: ${formatCurrency(netPayable, payment.currency)}`, pageWidth - 15, finalY, { align: 'right' });
 
         // --- Signatories ---
         finalY += 30;
@@ -169,6 +203,11 @@ export const DocumentGenerationService = {
         const doc = new jsPDF();
         const pageWidth = doc.internal.pageSize.width;
 
+        // Get amounts using helper functions for consistent access
+        const netPayable = getNetPayable(payment);
+        const preTaxAmount = getPreTaxAmount(payment);
+        const budgetLineName = getBudgetLineName(payment);
+
         // --- Page 1: Payment Voucher ---
         doc.setFontSize(18);
         doc.text('PAYMENT VOUCHER', pageWidth / 2, 20, { align: 'center' });
@@ -181,31 +220,40 @@ export const DocumentGenerationService = {
         doc.text('PAYEE DETAILS', 15, 45);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
-        doc.text(`Payee: ${payment.vendor}`, 15, 55);
-        doc.text(`Payment Mode: ${payment.paymentMode}`, 15, 62);
+        doc.text(`Payee: ${payment.vendor || 'N/A'}`, 15, 55);
+        doc.text(`Payment Mode: ${payment.paymentMode || 'N/A'}`, 15, 62);
         doc.text(`Bank: ${payment.bank || 'N/A'}`, 15, 69);
+        doc.text(`Budget Line: ${budgetLineName}`, 15, 76);
 
+        // Payment Details Table
         autoTable(doc, {
-            startY: 80,
-            head: [['Description', 'Amount']],
-            body: [[payment.description, `${payment.currency} ${parseFloat(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`]],
+            startY: 85,
+            head: [['Description', 'Pre-Tax Amount', 'Net Payable']],
+            body: [[
+                payment.description || 'N/A',
+                formatCurrency(preTaxAmount, payment.currency),
+                formatCurrency(netPayable, payment.currency)
+            ]],
             theme: 'grid',
             headStyles: { fillColor: [66, 66, 66] },
         });
 
         let finalY = doc.lastAutoTable.finalY + 10;
 
+        // Tax Breakdown (if applicable)
         if (payment.whtAmount > 0 || payment.levyAmount > 0 || payment.vatAmount > 0) {
             doc.setFont('helvetica', 'bold');
             doc.text('TAX BREAKDOWN', 15, finalY);
             const taxData = [];
-            if (payment.whtAmount > 0) taxData.push(['Withholding Tax', payment.whtAmount]);
-            if (payment.levyAmount > 0) taxData.push(['Levies', payment.levyAmount]);
-            if (payment.vatAmount > 0) taxData.push(['VAT', payment.vatAmount]);
+            if (payment.whtAmount > 0) taxData.push(['Withholding Tax (WHT)', formatCurrency(payment.whtAmount, payment.currency)]);
+            if (payment.levyAmount > 0) taxData.push(['Levies (NHIL/GETFund/COVID)', formatCurrency(payment.levyAmount, payment.currency)]);
+            if (payment.vatAmount > 0) taxData.push(['VAT', formatCurrency(payment.vatAmount, payment.currency)]);
+            if (payment.momoCharge > 0) taxData.push(['MoMo Charge', formatCurrency(payment.momoCharge, payment.currency)]);
+
             autoTable(doc, {
                 startY: finalY + 5,
                 head: [['Tax Type', 'Amount']],
-                body: taxData.map(row => [row[0], `${payment.currency} ${parseFloat(row[1]).toLocaleString(undefined, { minimumFractionDigits: 2 })}`]),
+                body: taxData,
                 theme: 'plain',
                 tableWidth: pageWidth / 2
             });
@@ -218,82 +266,19 @@ export const DocumentGenerationService = {
             doc.text('BUDGET BREAKDOWN', 15, finalY);
 
             const bData = payment.budgetData;
-            autoTable(doc, {
-                startY: finalY + 5,
-                head: [['Budget Line', 'Allocated', 'Spent to Date', 'Bal C/D', 'Request', 'Bal B/D']],
-                body: [[
-                    bData.budgetLine || 'N/A',
-                    `$${(bData.balCD + (bData.request || 0) + (bData.totalSpendToDate || 0)).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, // Approximate allocated if not passed directly, or we can use balCD + spent
-                    // Actually, let's use the formatted values if available or raw numbers
-                    // The service returns formatted values like '$1,000.00'
-                    // But for PDF we might want to control formatting.
-                    // Let's use raw numbers if possible.
-                    // Wait, VoucherBalanceService returns: balCD, request, balBD (numbers)
-                    // It doesn't return allocatedAmount directly in the result object I saw in the file view?
-                    // Let's check VoucherBalanceService.calculateVoucherBudgetImpact again.
-                    // It returns: budgetLine, balCD, request, balBD.
-                    // It does NOT return allocated or spentToDate in the *result* object.
-                    // I should update PaymentGenerator to pass the raw balanceData as well, OR update calculateVoucherBudgetImpact to include them.
-                    // Or I can just calculate them here: Allocated ~ Bal C/D + Spent (if I had spent).
-                    // Actually, let's look at what I passed. I passed `impact`.
-                    // `impact` has balCD, request, balBD.
-                    // It does NOT have allocated or spent.
-                    // I should probably pass the FULL data.
-                    // Let's stick to what we have for now: Bal C/D, Request, Bal B/D are the most important.
-                    // But the user asked for "budget allocated... spent... balance brought down... budget impact... budget carried down".
-                    // I need ALL of them.
-                    // I will update PaymentGenerator to pass the raw `balanceData` AND the `impact`.
-                    // OR, I can just rely on the fact that `balCD` is the "Opening Balance" for this transaction.
-                    // Let's check `VoucherBalanceService` again.
-                    // `getBudgetBalanceForVoucher` returns `allocatedAmount`, `totalSpendToDate`, `balCD`.
-                    // `calculateVoucherBudgetImpact` returns `balCD`, `request`, `balBD`.
-                    // So I need to merge them.
-                ]],
-            });
-            // Wait, I need to fix the data passing first.
-            // I will assume for this step that I will fix the data passing in PaymentGenerator in the next step or I will merge it here.
-            // Actually, I can't merge it here if I don't have it.
-            // I will update this step to just render what I have, and then I will refine the data passing.
-            // NO, I should do it right.
-            // I will update PaymentGenerator to pass a merged object.
-            // But I am already in the middle of editing DocumentGenerationService?
-            // No, I am queuing tool calls.
-            // I will update DocumentGenerationService to EXPECT the full data.
-            // And I will update PaymentGenerator to PASS the full data.
-
-            // Let's write the code assuming `payment.budgetData` has:
-            // budgetLine, allocatedAmount, totalSpendToDate, balCD, request, balBD.
-
-            // Re-reading VoucherBalanceService:
-            // getBudgetBalanceForVoucher returns: { allocatedAmount, totalSpendToDate, balCD ... }
-            // calculateVoucherBudgetImpact returns: { balCD, request, balBD ... }
-
-            // So in PaymentGenerator, I should merge them.
-
-            // Back to DocumentGenerationService code:
-
-            // columns: Budget Line, Allocated, Spent, Bal C/D, Request, Bal B/D
-
-            // body:
-            // [
-            //   bData.budgetLine,
-            //   formatCurrency(bData.allocatedAmount),
-            //   formatCurrency(bData.totalSpendToDate),
-            //   formatCurrency(bData.balCD),
-            //   formatCurrency(bData.request),
-            //   formatCurrency(bData.balBD)
-            // ]
+            // Use budgetLineName which should be set by the merge in PaymentGenerator
+            const displayBudgetLine = bData.budgetLineName || bData.budgetLine || budgetLineName || 'N/A';
 
             autoTable(doc, {
                 startY: finalY + 5,
                 head: [['Budget Line', 'Allocated', 'Spent', 'Bal C/D', 'Request', 'Bal B/D']],
                 body: [[
-                    bData.budgetLine || 'N/A',
-                    `$${(bData.allocatedAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-                    `$${(bData.totalSpendToDate || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-                    `$${(bData.balCD || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-                    `$${(bData.request || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`,
-                    `$${(bData.balBD || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                    displayBudgetLine,
+                    formatUSD(bData.allocatedAmount || 0),
+                    formatUSD(bData.totalSpendToDate || 0),
+                    formatUSD(bData.balCD || 0),
+                    formatUSD(bData.request || 0),
+                    formatUSD(bData.balBD || 0)
                 ]],
                 theme: 'grid',
                 headStyles: { fillColor: [66, 66, 66] },
@@ -305,7 +290,7 @@ export const DocumentGenerationService = {
 
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text(`NET PAYABLE: ${payment.currency} ${parseFloat(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, pageWidth - 15, finalY, { align: 'right' });
+        doc.text(`NET PAYABLE: ${formatCurrency(netPayable, payment.currency)}`, pageWidth - 15, finalY, { align: 'right' });
 
         finalY += 30;
         doc.setFontSize(10);
@@ -339,18 +324,19 @@ export const DocumentGenerationService = {
         doc.text('Kindly transfer the sum of:', 15, 85);
         doc.setFontSize(12);
         doc.setFont('helvetica', 'bold');
-        doc.text(`${payment.currency} ${parseFloat(payment.amount).toLocaleString(undefined, { minimumFractionDigits: 2 })}`, 15, 95);
+        doc.text(formatCurrency(netPayable, payment.currency), 15, 95);
         doc.setFontSize(10);
         doc.setFont('helvetica', 'normal');
         doc.text('To the beneficiary details below:', 15, 110);
         autoTable(doc, {
             startY: 115,
             body: [
-                ['Beneficiary Name', payment.vendor],
-                ['Account Number', payment.accountNumber || 'N/A'],
+                ['Beneficiary Name', payment.vendor || 'N/A'],
+                ['Account Number', payment.accountNumber || payment.vendorAccountNumber || 'N/A'],
                 ['Bank', payment.bank || 'N/A'],
-                ['Branch', payment.branch || 'N/A'],
-                ['Description', payment.description]
+                ['Branch', payment.branch || payment.vendorBranch || 'N/A'],
+                ['Description', payment.description || 'N/A'],
+                ['Budget Line', budgetLineName]
             ],
             theme: 'grid',
             columnStyles: { 0: { fontStyle: 'bold', cellWidth: 50 } }

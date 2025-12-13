@@ -2,12 +2,12 @@
 // Handles budget balance calculations for payment vouchers
 // Provides Bal C/D (opening balance), Request (current amount), and Bal B/D (closing balance)
 
-import { 
-  doc, 
-  getDoc, 
-  updateDoc, 
+import {
+  doc,
+  getDoc,
+  updateDoc,
   writeBatch,
-  serverTimestamp 
+  serverTimestamp
 } from 'firebase/firestore';
 import { BudgetUpdateService } from './BudgetUpdateService.js';
 
@@ -16,7 +16,7 @@ import { BudgetUpdateService } from './BudgetUpdateService.js';
  * Manages budget balance tracking specifically for payment vouchers
  */
 export class VoucherBalanceService {
-  
+
   /**
    * Get budget line balance for voucher display
    * @param {Object} db - Firestore database instance
@@ -24,18 +24,50 @@ export class VoucherBalanceService {
    * @param {string} budgetLineId - Budget line ID
    * @returns {Promise<Object>} Budget balance data for voucher
    */
-  static async getBudgetBalanceForVoucher(db, appId, budgetLineId) {
+  static async getBudgetBalanceForVoucher(db, appId, budgetLineIdOrName) {
     try {
-      console.log(`[VoucherBalanceService] Fetching budget balance for budget line: ${budgetLineId}`);
-      
-      const budgetLineRef = doc(db, `artifacts/${appId}/public/data/budgetLines`, budgetLineId);
-      const budgetLineDoc = await getDoc(budgetLineRef);
-      
+      console.log(`[VoucherBalanceService] Fetching budget balance for budget line: ${budgetLineIdOrName}`);
+
+      let budgetLineDoc = null;
+      let budgetLineId = budgetLineIdOrName;
+
+      // First, try direct document lookup by ID
+      const budgetLineRef = doc(db, `artifacts/${appId}/public/data/budgetLines`, budgetLineIdOrName);
+      budgetLineDoc = await getDoc(budgetLineRef);
+
+      // If not found by ID, try to find by name (the budgetLine might be a display string like "NAME - GL - DEPT")
       if (!budgetLineDoc.exists()) {
-        console.warn(`[VoucherBalanceService] Budget line document not found: ${budgetLineId}`);
+        console.log(`[VoucherBalanceService] Document not found by ID, trying name-based lookup...`);
+
+        // Import collection and query for name-based lookup
+        const { collection, getDocs } = await import('firebase/firestore');
+        const budgetLinesRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
+        const budgetLinesSnapshot = await getDocs(budgetLinesRef);
+
+        // Extract the name part (first part before " - ")
+        const searchName = budgetLineIdOrName.split(' - ')[0].trim();
+        console.log(`[VoucherBalanceService] Searching for budget line with name: ${searchName}`);
+
+        for (const docItem of budgetLinesSnapshot.docs) {
+          const data = docItem.data();
+          // Check if name matches (exact or partial)
+          if (data.name === searchName ||
+            data.name === budgetLineIdOrName ||
+            data.budgetLine === searchName ||
+            data.budgetLine === budgetLineIdOrName) {
+            budgetLineDoc = docItem;
+            budgetLineId = docItem.id;
+            console.log(`[VoucherBalanceService] Found budget line by name: ${docItem.id}`);
+            break;
+          }
+        }
+      }
+
+      if (!budgetLineDoc || !budgetLineDoc.exists()) {
+        console.warn(`[VoucherBalanceService] Budget line document not found: ${budgetLineIdOrName}`);
         return {
-          budgetLineId,
-          budgetLineName: 'Unknown',
+          budgetLineId: budgetLineIdOrName,
+          budgetLineName: budgetLineIdOrName, // Use the input as the name since we couldn't find it
           allocatedAmount: 0,
           totalSpendToDate: 0,
           balCD: 0,
@@ -44,10 +76,10 @@ export class VoucherBalanceService {
           error: 'Budget line not found'
         };
       }
-      
-      const budgetData = budgetLineDoc.data();
+
+      const budgetData = budgetLineDoc.data ? budgetLineDoc.data() : budgetLineDoc;
       console.log(`[VoucherBalanceService] Budget line data retrieved:`, budgetData);
-      
+
       // Extract budget line name
       let budgetLineName = 'Unknown';
       if (budgetData.name) {
@@ -57,7 +89,7 @@ export class VoucherBalanceService {
       } else if (budgetData.description) {
         budgetLineName = budgetData.description;
       }
-      
+
       // Extract allocated amount (total budget)
       let allocatedAmount = 0;
       if (budgetData.allocatedAmount !== undefined) {
@@ -70,7 +102,7 @@ export class VoucherBalanceService {
         // Sum monthly values if they exist
         allocatedAmount = budgetData.monthlyValues.reduce((sum, val) => sum + Number(val || 0), 0);
       }
-      
+
       // Extract total spend to date
       let totalSpendToDate = 0;
       if (budgetData.totalSpendToDate !== undefined) {
@@ -80,10 +112,10 @@ export class VoucherBalanceService {
       } else if (budgetData.totalSpent !== undefined) {
         totalSpendToDate = Number(budgetData.totalSpent);
       }
-      
+
       // Calculate current balance (Bal C/D)
       let balCD = allocatedAmount - totalSpendToDate;
-      
+
       // If we have explicit current balance fields, use those instead
       if (budgetData.currentBalanceUSD !== undefined) {
         balCD = Number(budgetData.currentBalanceUSD);
@@ -92,7 +124,7 @@ export class VoucherBalanceService {
       } else if (budgetData.balance !== undefined) {
         balCD = Number(budgetData.balance);
       }
-      
+
       console.log(`[VoucherBalanceService] Budget calculations:`, {
         budgetLineName,
         allocatedAmount,
@@ -109,7 +141,7 @@ export class VoucherBalanceService {
           monthlyValues: budgetData.monthlyValues
         }
       });
-      
+
       return {
         budgetLineId,
         budgetLineName,
@@ -120,12 +152,12 @@ export class VoucherBalanceService {
         balBD: 0,   // Will be calculated by caller
         rawData: budgetData // Store raw data for debugging
       };
-      
+
     } catch (error) {
       console.error(`[VoucherBalanceService] Error fetching budget balance:`, error);
       return {
-        budgetLineId,
-        budgetLineName: 'Error',
+        budgetLineId: budgetLineIdOrName,
+        budgetLineName: budgetLineIdOrName || 'Error',
         allocatedAmount: 0,
         totalSpendToDate: 0,
         balCD: 0,
@@ -135,7 +167,7 @@ export class VoucherBalanceService {
       };
     }
   }
-  
+
   /**
    * Update budget balance after payment finalization
    * @param {Object} db - Firestore database instance
@@ -154,20 +186,20 @@ export class VoucherBalanceService {
         paymentId,
         userId
       });
-      
+
       // ✅ ENHANCED: Use centralized BudgetUpdateService for consistent updates
       const updateResult = await BudgetUpdateService.updateBudgetBalance(
-        db, 
-        appId, 
-        budgetLineId, 
-        requestAmount, 
-        paymentId, 
+        db,
+        appId,
+        budgetLineId,
+        requestAmount,
+        paymentId,
         userId
       );
-      
+
       if (updateResult.success) {
         console.log(`[VoucherBalanceService] Budget balance updated successfully using centralized service:`, updateResult);
-        
+
         return {
           budgetLineId,
           budgetLineName: updateResult.budgetLineName,
@@ -182,13 +214,13 @@ export class VoucherBalanceService {
       } else {
         throw new Error(`Budget update failed: ${updateResult.error}`);
       }
-      
+
     } catch (error) {
       console.error(`[VoucherBalanceService] Error updating budget balance:`, error);
       throw error;
     }
   }
-  
+
   /**
    * Get current month for budget updates
    * @returns {string} Current month in YYYY-MM format
@@ -197,7 +229,7 @@ export class VoucherBalanceService {
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
   }
-  
+
   /**
    * Calculate voucher budget impact display data
    * @param {Object} budgetBalance - Budget balance data from getBudgetBalanceForVoucher
@@ -210,11 +242,11 @@ export class VoucherBalanceService {
         budgetBalance,
         requestAmount
       });
-      
+
       const balCD = Number(budgetBalance.balCD || 0);
       const request = Number(requestAmount || 0);
       const balBD = balCD - request; // Closing balance
-      
+
       const result = {
         budgetLine: budgetBalance.budgetLineName,
         balCD: balCD,
@@ -228,11 +260,11 @@ export class VoucherBalanceService {
         // Add negative indicator
         balBDFormattedWithIndicator: balBD < 0 ? `-$${Math.abs(balBD).toFixed(2)}` : `$${balBD.toFixed(2)}`
       };
-      
+
       console.log(`[VoucherBalanceService] Voucher budget impact calculated:`, result);
-      
+
       return result;
-      
+
     } catch (error) {
       console.error(`[VoucherBalanceService] Error calculating voucher budget impact:`, error);
       return {

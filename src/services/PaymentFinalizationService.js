@@ -634,6 +634,7 @@ class PaymentFinalizationService {
           budgetLine: payment.budgetLine || payment.budgetItem || 'Unknown',
           isPartialPayment: percentage < 99.9, // Determine partial based on calculated percentage
           paymentPercentage: Number(percentage.toFixed(2)),
+          thisPaymentPercentage: Number(percentage.toFixed(2)), // Explicitly name the field
           pretaxAmount: Number(payment.pretaxAmount || payment.fullPretax || payment.amount || 0),
           whtAmount: Number(payment.whtAmount || 0),
           whtRate: Number(payment.whtRate || 0), // Ensure WHT rate is logged
@@ -649,8 +650,11 @@ class PaymentFinalizationService {
           vatDecision: payment.vatDecision || payment.vat || 'NO',
           paymentMode: payment.paymentMode || 'BANK TRANSFER',
           payment_status: payment.payment_status || 'finalized',
+          // Cumulative tracking fields
           paid_amount: payment.paid_amount || amountThisRun,
+          cumulativePaidAmount: Number(payment.paid_amount || 0) + amountThisRun, // Total paid after this transaction
           total_amount: totalAmount,
+          remainingAmount: Math.max(0, totalAmount - (Number(payment.paid_amount || 0) + amountThisRun)), // What's left after this
           budgetImpactUSD: Number(payment.budgetImpactUSD || 0),
           // Include metadata fields
           weeklySheetId: payment.weeklySheetId || metadata.weeklySheetId || null,
