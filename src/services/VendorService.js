@@ -65,47 +65,55 @@ const MOCK_VENDORS = [
 ];
 
 export const VendorService = {
-    // Get all vendors (Mock + Firestore placeholder)
+    // Get all vendors from Firestore Vendor Management collection
     getAllVendors: async (db, appId) => {
         try {
-            // TODO: Connect to Firestore when ready
-            // const vendorsRef = collection(db, `artifacts/${appId}/public/data/vendors`);
-            // const q = query(vendorsRef, orderBy('name'));
-            // const snapshot = await getDocs(q);
-            // return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            console.log('[VendorService] Fetching vendors from Firestore...');
+            const vendorsRef = collection(db, `artifacts/${appId}/public/data/vendors`);
+            const q = query(vendorsRef, orderBy('name'));
+            const snapshot = await getDocs(q);
+            const vendors = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            console.log(`[VendorService] Loaded ${vendors.length} vendors from Vendor Management`);
 
-            // Return Mock Data for UI Build
-            return new Promise(resolve => setTimeout(() => resolve(MOCK_VENDORS), 500));
+            // If no vendors in Firestore yet, return empty array (not mock data)
+            return vendors;
         } catch (error) {
-            console.error("Error fetching vendors:", error);
+            console.error("[VendorService] Error fetching vendors:", error);
             return [];
         }
     },
 
-    // Add a new vendor
+    // Add a new vendor to Firestore Vendor Management collection
     addVendor: async (db, appId, vendorData) => {
         try {
-            console.log("Adding vendor:", vendorData);
-            // const vendorsRef = collection(db, `artifacts/${appId}/public/data/vendors`);
-            // const docRef = await addDoc(vendorsRef, vendorData);
-            // return { id: docRef.id, ...vendorData };
-
-            return { id: `ven_${Date.now()}`, ...vendorData };
+            console.log("[VendorService] Adding vendor to Firestore:", vendorData);
+            const vendorsRef = collection(db, `artifacts/${appId}/public/data/vendors`);
+            const docRef = await addDoc(vendorsRef, {
+                ...vendorData,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+            console.log("[VendorService] Vendor added successfully with ID:", docRef.id);
+            return { id: docRef.id, ...vendorData };
         } catch (error) {
-            console.error("Error adding vendor:", error);
+            console.error("[VendorService] Error adding vendor:", error);
             throw error;
         }
     },
 
-    // Update a vendor
+    // Update a vendor in Firestore Vendor Management collection
     updateVendor: async (db, appId, vendorId, updates) => {
         try {
-            console.log("Updating vendor:", vendorId, updates);
-            // const vendorRef = doc(db, `artifacts/${appId}/public/data/vendors`, vendorId);
-            // await updateDoc(vendorRef, updates);
+            console.log("[VendorService] Updating vendor:", vendorId, updates);
+            const vendorRef = doc(db, `artifacts/${appId}/public/data/vendors`, vendorId);
+            await updateDoc(vendorRef, {
+                ...updates,
+                updatedAt: new Date().toISOString()
+            });
+            console.log("[VendorService] Vendor updated successfully:", vendorId);
             return { id: vendorId, ...updates };
         } catch (error) {
-            console.error("Error updating vendor:", error);
+            console.error("[VendorService] Error updating vendor:", error);
             throw error;
         }
     },

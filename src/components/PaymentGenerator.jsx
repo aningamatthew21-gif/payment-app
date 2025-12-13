@@ -228,11 +228,24 @@ const PaymentGenerator = ({
         budgetQuerySnapshot.forEach(doc => {
           const budgetLine = doc.data();
           if (budgetLine.name) {
+            // Build display string with only available fields
+            let displayParts = [budgetLine.name];
+            if (budgetLine.accountNo) displayParts.push(budgetLine.accountNo);
+            if (budgetLine.deptCode) displayParts.push(budgetLine.deptCode);
+            if (budgetLine.deptDimension) displayParts.push(budgetLine.deptDimension);
+
+            const displayValue = displayParts.join(' - ');
+
             data.budgetLines.push({
               id: doc.id,
-              value: budgetLine.name,
-              description: `${budgetLine.accountNo} - ${budgetLine.deptCode}`,
-              isActive: true
+              value: displayValue, // Full formatted display
+              name: budgetLine.name, // Original name for data storage
+              description: '', // Clear, info is now in value
+              isActive: true,
+              budgetLineId: doc.id,
+              accountNo: budgetLine.accountNo || '',
+              deptCode: budgetLine.deptCode || '',
+              deptDimension: budgetLine.deptDimension || ''
             });
           }
         });
@@ -369,12 +382,14 @@ const PaymentGenerator = ({
     };
 
     // Use the fetched whtRate and determined levyRate for calculations
+    // Use customMomoRate if user has set it, otherwise use globalRates
+    const effectiveMomoRate = state.customMomoRate !== undefined ? state.customMomoRate : (globalRates.momoRate || 0.01);
     const rates = {
       ...globalRates,
       whtRate: normalizeRate(whtRate),
       levyRate: normalizeRate(levyRateToUse),
       vatRate: normalizeRate(globalRates.vatRate || 0.15),
-      momoRate: normalizeRate(globalRates.momoRate || 0.01)
+      momoRate: normalizeRate(effectiveMomoRate)
     };
 
     const calculation = calculatePayment(paymentData, rates);
@@ -396,6 +411,7 @@ const PaymentGenerator = ({
     globalRates,
     whtRate, // Add whtRate to dependency array
     validationData, // Add validationData to dependency array
+    state.customMomoRate, // Add customMomoRate to trigger recalculation
     dispatch
   ]);
 
@@ -436,6 +452,9 @@ const PaymentGenerator = ({
     dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'vatDecision', value: payment.vatDecision || payment.vat || 'NO' } });
     dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'fxRate', value: parseFloat(payment.fxRate) || 1 } });
     dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'bank', value: payment.bank || '' } });
+    // Map MOMO charge from imported data (can be percentage or raw value)
+    const importedMomoCharge = parseFloat(payment.momoCharge) || 0;
+    dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'customMomoRate', value: importedMomoCharge > 1 ? importedMomoCharge / 100 : importedMomoCharge } });
 
     // Map priority if available, converting to lowercase to match value (e.g. 'HIGH' -> 'high')
     // If priority is missing, default to 'normal'
@@ -1185,6 +1204,24 @@ const PaymentGenerator = ({
                     )}
                   </select>
                 </div>
+                {/* MOMO Charge Rate - Always visible for user to set/view */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">MoMo Charge Rate (%)</label>
+                  <input
+                    type="number"
+                    value={state.customMomoRate !== undefined ? (state.customMomoRate * 100) : ((globalRates.momoRate || 0.01) * 100)}
+                    onChange={(e) => {
+                      // Update momoRate in the calculation context
+                      const newRate = Number(e.target.value) / 100;
+                      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'customMomoRate', value: newRate } });
+                    }}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    placeholder="1"
+                    min="0"
+                    step="0.1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">Applies when Payment Mode is MOMO</p>
+                </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Tax Type</label>
                   <select
@@ -1297,6 +1334,10 @@ const PaymentGenerator = ({
                   <div>
                     <label className="block text-sm font-medium text-gray-600">VAT Amount</label>
                     <p className="text-lg font-semibold text-gray-900">₵ {vatAmount.toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-600">MoMo Charge</label>
+                    <p className="text-lg font-semibold text-gray-900">₵ {momoCharge.toFixed(2)}</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-600">Net Payable</label>

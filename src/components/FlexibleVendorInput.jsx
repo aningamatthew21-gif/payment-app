@@ -166,10 +166,11 @@ const FlexibleVendorInput = ({
     if (e.key === 'Tab') {
       // Auto-select or add on tab
       if (inputValue.trim()) {
-        const exactMatch = options.find(opt => opt.value.toLowerCase() === inputValue.trim().toLowerCase());
+        const inputLower = inputValue.trim().toLowerCase();
+        const exactMatch = options.find(opt => opt.value.toLowerCase() === inputLower);
         if (exactMatch) {
           handleOptionSelect(exactMatch);
-        } else if (allowNew && !options.find(opt => opt.value === inputValue.trim())) {
+        } else if (allowNew) {
           handleNewVendor();
         }
       }
@@ -187,14 +188,20 @@ const FlexibleVendorInput = ({
   const handleBlur = () => {
     // Delay closing to allow for option selection
     setTimeout(() => {
-      // Auto-add on blur if it's a new value and not empty
-      if (allowNew && inputValue.trim() && !options.find(opt => opt.value === inputValue.trim())) {
-        // Only add if we're not just closing the dropdown after a selection
-        // The timeout helps, but we should check if the input value is still the same
-        // and if it hasn't been handled by handleOptionSelect (which closes the dropdown)
-        if (isOpen) {
-          handleNewVendor();
-        }
+      // Use case-insensitive matching to prevent duplicates
+      const inputTrimmed = inputValue.trim().toLowerCase();
+      const existingVendor = options.find(opt =>
+        opt.value.toLowerCase() === inputTrimmed
+      );
+
+      // Only auto-add if:
+      // 1. allowNew is enabled
+      // 2. Input has a value
+      // 3. No existing vendor matches (case-insensitive)
+      // 4. Dropdown is still open (user didn't select from dropdown)
+      if (allowNew && inputValue.trim() && !existingVendor && isOpen) {
+        console.log('[FlexibleVendorInput] Auto-adding new vendor on blur:', inputValue.trim());
+        handleNewVendor();
       }
       setIsOpen(false);
       setHighlightedIndex(-1);
@@ -255,7 +262,7 @@ const FlexibleVendorInput = ({
             focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500
             disabled:bg-gray-100 disabled:cursor-not-allowed
             ${isOpen ? 'border-blue-500' : ''}
-            ${isTyping && !options.find(opt => opt.value === inputValue) ? 'border-orange-400' : ''}
+            ${isTyping && !options.find(opt => opt.value.toLowerCase() === inputValue.toLowerCase()) ? 'border-orange-400' : ''}
           `}
         />
 
@@ -346,7 +353,7 @@ const FlexibleVendorInput = ({
       )}
 
       {/* Status indicator */}
-      {isTyping && !options.find(opt => opt.value === inputValue) && inputValue.trim() && (
+      {isTyping && !options.find(opt => opt.value.toLowerCase() === inputValue.toLowerCase()) && inputValue.trim() && (
         <div className="absolute -bottom-6 left-0 text-xs text-orange-600">
           New vendor - will be added to system
         </div>

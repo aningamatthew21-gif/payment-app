@@ -11,6 +11,7 @@ import EnhancedUndoPanel from '../components/EnhancedUndoPanel';
 import { safeToFixed } from '../utils/formatters';
 import { useSettings } from '../contexts/SettingsContext';
 import { calculateTotalTaxes } from '../services/FinancialEngine';
+import { VendorService } from '../services/VendorService';
 
 const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout, sheetName }) => {
     console.log('=== WeeklyPaymentsDetail RENDER ===');
@@ -140,17 +141,26 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 budgetQuerySnapshot.forEach(doc => {
                     const budgetLine = doc.data();
                     if (budgetLine.name) {
+                        // Build display string with only available fields
+                        let displayParts = [budgetLine.name];
+                        if (budgetLine.accountNo) displayParts.push(budgetLine.accountNo);
+                        if (budgetLine.deptCode) displayParts.push(budgetLine.deptCode);
+                        if (budgetLine.deptDimension) displayParts.push(budgetLine.deptDimension);
+
+                        const displayValue = displayParts.join(' - ');
+
                         data.budgetLines.push({
                             id: doc.id,
-                            value: budgetLine.name,
-                            description: `${budgetLine.accountNo} - ${budgetLine.deptCode} - ${budgetLine.deptDimension}`,
+                            value: displayValue, // Full formatted display for dropdown
+                            name: budgetLine.name, // Original name for data storage
+                            description: '', // Clear description, info is now in value
                             isActive: true,
                             budgetLineId: doc.id,
-                            accountNo: budgetLine.accountNo,
-                            deptCode: budgetLine.deptCode,
-                            deptDimension: budgetLine.deptDimension
+                            accountNo: budgetLine.accountNo || '',
+                            deptCode: budgetLine.deptCode || '',
+                            deptDimension: budgetLine.deptDimension || ''
                         });
-                        console.log(`Added enhanced budget line to WeeklyPaymentsDetail: ${budgetLine.name}`);
+                        console.log(`Added enhanced budget line: ${displayValue}`);
                     }
                 });
             } catch (budgetError) {
@@ -183,6 +193,32 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 }
             } catch (whtError) {
                 console.warn('Error loading enhanced procurement types, using existing ones:', whtError);
+            }
+
+            // VENDOR MANAGEMENT INTEGRATION: Load vendors from VendorService (single source of truth)
+            try {
+                console.log('Loading vendors from Vendor Management for WeeklyPaymentsDetail...');
+                const managedVendors = await VendorService.getAllVendors(db, appId);
+
+                if (managedVendors && managedVendors.length > 0) {
+                    console.log(`Found ${managedVendors.length} vendors from Vendor Management`);
+
+                    // Replace validation collection vendors with Vendor Management vendors
+                    data.vendors = managedVendors.map(v => ({
+                        id: v.id,
+                        value: v.name,
+                        description: v.email || '',
+                        isActive: v.status === 'active',
+                        vendorId: v.id,
+                        banking: v.banking || null
+                    }));
+
+                    console.log('Vendors loaded from Vendor Management:', data.vendors.length);
+                } else {
+                    console.log('No vendors found in Vendor Management, existing validation vendors will be used');
+                }
+            } catch (vendorError) {
+                console.warn('Error loading vendors from Vendor Management, using validation collection:', vendorError);
             }
 
             console.log('Enhanced validation data loaded for WeeklyPaymentsDetail:', data);
@@ -540,15 +576,9 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 // WHT will be calculated by PaymentGenerator when payments are processed
                 const calculation = calculateTotalTaxes(transaction, globalRates);
 
-                // Update derived fields (excluding WHT - handled by PaymentGenerator)
+                // Update derived fields
+                // NOTE: WHT/NetPayable calculations removed - handled exclusively by PaymentGenerator
                 newData.momoCharge = calculation.momoCharge;
-
-                // FIX: Store ALL calculated values for UI display
-                newData.whtAmount = calculation.wht;
-                newData.whtRate = calculation.ratesUsed?.whtRate * 100;
-                newData.netPayable = calculation.netPayable;
-                newData.levyAmount = calculation.levy;
-                newData.vatAmount = calculation.vat;
             }
 
             console.log('Updated formData:', newData);
@@ -721,8 +751,8 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                         <option value="">Select Budget Line</option>
                                         {validationData.budgetLines.length > 0 ? (
                                             validationData.budgetLines.map((budgetLineOption, index) => (
-                                                <option key={budgetLineOption.id || index} value={budgetLineOption.value}>
-                                                    {budgetLineOption.value} - {budgetLineOption.description || `${budgetLineOption.accountNo} - ${budgetLineOption.deptCode}`}
+                                                <option key={budgetLineOption.id || index} value={budgetLineOption.name || budgetLineOption.value}>
+                                                    {budgetLineOption.value}
                                                 </option>
                                             ))
                                         ) : (
@@ -806,36 +836,6 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                         )}
                                     </select>
                                 </div>
-
-                                {/* CORE WHT INTEGRATION: WHT Rate Display */}
-                                {formData.procurement && formData.currency === 'GHS' && (
-                                    <div className="p-2 border rounded-md bg-gray-50">
-                                        <label className="text-sm text-gray-600">WHT Rate</label>
-                                        <div className="font-semibold text-gray-900">
-                                            {formData.whtRate ? `${formData.whtRate}%` : 'Calculating...'}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* CORE WHT INTEGRATION: WHT Amount Display */}
-                                {formData.whtAmount && formData.currency === 'GHS' && (
-                                    <div className="p-2 border rounded-md bg-blue-50">
-                                        <label className="text-sm text-blue-600">WHT Amount</label>
-                                        <div className="font-semibold text-blue-900">
-                                            {formData.whtAmount.toFixed(2)}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* CORE WHT INTEGRATION: Net Payable Display */}
-                                {formData.netPayable && formData.currency === 'GHS' && (
-                                    <div className="p-2 border rounded-md bg-green-50">
-                                        <label className="text-sm text-green-600">Net Payable</label>
-                                        <div className="font-semibold text-green-900">
-                                            {formData.netPayable.toFixed(2)}
-                                        </div>
-                                    </div>
-                                )}
                             </div>
                             <div className="flex justify-end space-x-2">
                                 <button onClick={handleSave} className="p-2 bg-green-500 text-white rounded-md flex items-center space-x-2">

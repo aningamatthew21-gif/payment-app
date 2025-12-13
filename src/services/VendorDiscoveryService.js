@@ -1,11 +1,11 @@
 // VendorDiscoveryService - Handles automatic vendor discovery and validation management
 // This service automatically identifies and adds new vendors from imported data and user input
 
-import { 
-  collection, 
-  addDoc, 
-  query, 
-  where, 
+import {
+  collection,
+  addDoc,
+  query,
+  where,
   getDocs,
   orderBy,
   updateDoc
@@ -15,6 +15,9 @@ class VendorDiscoveryService {
   constructor(db, appId) {
     this.db = db;
     this.appId = appId;
+    // Use Vendor Management collection as single source of truth
+    this.vendorsCollection = `artifacts/${appId}/public/data/vendors`;
+    // Keep validation collection for backwards compatibility queries
     this.validationCollection = `artifacts/${appId}/public/data/validation`;
   }
 
@@ -42,11 +45,11 @@ class VendorDiscoveryService {
       importedPayments.forEach((payment, index) => {
         if (payment.vendor && typeof payment.vendor === 'string') {
           const vendorName = payment.vendor.trim();
-          
+
           if (vendorName && !existingVendorNames.has(vendorName.toLowerCase())) {
             // Count occurrences of this vendor
             vendorCounts.set(vendorName, (vendorCounts.get(vendorName) || 0) + 1);
-            
+
             // Add to new vendors list if not already there
             if (!newVendors.includes(vendorName)) {
               newVendors.push(vendorName);
@@ -75,7 +78,7 @@ class VendorDiscoveryService {
   }
 
   /**
-   * Automatically add new vendors to the validation database
+   * Automatically add new vendors to the Vendor Management system (single source of truth)
    * @param {Array} newVendors - Array of vendor names to add
    * @returns {Object} Result of the auto-addition operation
    */
@@ -86,36 +89,67 @@ class VendorDiscoveryService {
     }
 
     try {
-      console.log('[VendorDiscoveryService] Starting auto-addition of vendors:', newVendors);
-      
-      const validationRef = collection(this.db, this.validationCollection);
+      console.log('[VendorDiscoveryService] Starting auto-addition of vendors to Vendor Management:', newVendors);
+
+      // Use Vendor Management collection (single source of truth)
+      const vendorsRef = collection(this.db, this.vendorsCollection);
+
+      // DUPLICATE PREVENTION: First, get all existing vendors from Firestore
+      const existingSnapshot = await getDocs(vendorsRef);
+      const existingVendorNames = new Set();
+      existingSnapshot.forEach(doc => {
+        const data = doc.data();
+        if (data.name) {
+          existingVendorNames.add(data.name.toLowerCase().trim());
+        }
+      });
+      console.log('[VendorDiscoveryService] Existing vendors in Firestore:', existingVendorNames.size);
+
       const addedVendors = [];
+      const skippedVendors = [];
       const errors = [];
 
-      // Add each new vendor to the validation database
+      // Add each new vendor to Vendor Management with proper structure
       for (const vendorName of newVendors) {
         try {
+          const normalizedName = vendorName.trim().toLowerCase();
+
+          // Skip if vendor already exists (case-insensitive check)
+          if (existingVendorNames.has(normalizedName)) {
+            console.log(`[VendorDiscoveryService] Skipping duplicate vendor: "${vendorName}"`);
+            skippedVendors.push(vendorName);
+            continue;
+          }
+
+          // Use VendorService-compatible data structure
           const vendorData = {
-            field: 'vendors',
-            value: vendorName.trim(),
-            description: `Auto-discovered vendor from import/transaction`,
-            isActive: true,
+            name: vendorName.trim(),
+            email: '',
+            status: 'active',
+            banking: {
+              bankName: '',
+              branchCode: '',
+              accountName: vendorName.trim(),
+              accountNumber: ''
+            },
             source: 'auto_discovered',
             discoveredAt: new Date().toISOString(),
-            usageCount: 0,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
           };
 
-          const docRef = await addDoc(validationRef, vendorData);
-          
+          const docRef = await addDoc(vendorsRef, vendorData);
+
+          // Add to set to prevent duplicates in same batch
+          existingVendorNames.add(normalizedName);
+
           addedVendors.push({
             id: docRef.id,
             name: vendorName,
             data: vendorData
           });
 
-          console.log(`[VendorDiscoveryService] Successfully added vendor: "${vendorName}" with ID: ${docRef.id}`);
+          console.log(`[VendorDiscoveryService] Successfully added vendor to Vendor Management: "${vendorName}" with ID: ${docRef.id}`);
 
         } catch (error) {
           console.error(`[VendorDiscoveryService] Failed to add vendor "${vendorName}":`, error);
@@ -127,12 +161,14 @@ class VendorDiscoveryService {
       }
 
       const result = {
-        success: addedVendors.length > 0,
+        success: addedVendors.length > 0 || skippedVendors.length > 0,
         addedVendors,
+        skippedVendors,
         errors,
         summary: {
           totalRequested: newVendors.length,
           successfullyAdded: addedVendors.length,
+          skippedDuplicates: skippedVendors.length,
           failed: errors.length
         }
       };
@@ -158,7 +194,7 @@ class VendorDiscoveryService {
     }
 
     const trimmedName = vendorName.trim();
-    
+
     if (trimmedName.length === 0) {
       return { isValid: false, message: 'Vendor name cannot be empty' };
     }
@@ -168,7 +204,7 @@ class VendorDiscoveryService {
     }
 
     // Check if vendor already exists (case-insensitive)
-    const existingVendor = existingVendors.find(vendor => 
+    const existingVendor = existingVendors.find(vendor =>
       vendor.value.toLowerCase() === trimmedName.toLowerCase()
     );
 
@@ -202,10 +238,10 @@ class VendorDiscoveryService {
     }
 
     const searchTerm = partialName.toLowerCase().trim();
-    
+
     // Filter vendors that match the partial name
     const suggestions = existingVendors
-      .filter(vendor => 
+      .filter(vendor =>
         vendor.value.toLowerCase().includes(searchTerm) &&
         vendor.isActive !== false
       )
@@ -213,10 +249,10 @@ class VendorDiscoveryService {
         // Prioritize exact matches and matches at the beginning
         const aStartsWith = a.value.toLowerCase().startsWith(searchTerm);
         const bStartsWith = b.value.toLowerCase().startsWith(searchTerm);
-        
+
         if (aStartsWith && !bStartsWith) return -1;
         if (!aStartsWith && bStartsWith) return 1;
-        
+
         // Then sort by length (shorter names first)
         return a.value.length - b.value.length;
       })
@@ -242,11 +278,11 @@ class VendorDiscoveryService {
       );
 
       const querySnapshot = await getDocs(vendorQuery);
-      
+
       if (!querySnapshot.empty) {
         const vendorDoc = querySnapshot.docs[0];
         const currentData = vendorDoc.data();
-        
+
         // Update usage count and last used timestamp
         await updateDoc(vendorDoc.ref, {
           usageCount: (currentData.usageCount || 0) + 1,

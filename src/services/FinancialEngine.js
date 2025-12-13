@@ -132,10 +132,18 @@ export const calculateTotalTaxes = (transaction, rates = {}) => {
   // 6. Calculate Net Payable to Supplier (Gross - WHT)
   const netPayableToSupplier = grossAmount - wht;
 
-  // 7. Calculate MoMo Charge (if Payment Mode is "MOMO") using dynamic rate
+  // 7. Calculate MoMo Charge (if Payment Mode contains "MOMO") using dynamic rate
   let momoCharge = 0;
-  if (paymentMode === 'MOMO TRANSFER') {
-    momoCharge = netPayableToSupplier * momoRate; // Updated: Calculated on Net Payable to Supplier
+  const isMomoPayment = paymentMode && paymentMode.toUpperCase().includes('MOMO');
+  if (isMomoPayment) {
+    momoCharge = netPayableToSupplier * momoRate; // Calculated on Net Payable to Supplier
+    console.log(`[FinancialEngine] MOMO charge calculated:`, {
+      paymentMode,
+      netPayableToSupplier,
+      momoRate: momoRate,
+      momoRatePercentage: `${(momoRate * 100).toFixed(2)}%`,
+      momoCharge
+    });
   }
 
   // 8. Calculate Final Net Payable (Net Payable to Supplier + MoMo Charge)
