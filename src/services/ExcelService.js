@@ -20,6 +20,7 @@ const TEMPLATE_CONFIG = {
     'FX RATE',
     'BANK',
     'FULL PRE-TAX AMOUNT',
+    'SERVICE CHARGE',
     'DEPARTMENTS',
     'PAYMENT PRIORITIES',
     'NOTES'
@@ -40,6 +41,7 @@ const TEMPLATE_CONFIG = {
     12,  // FX RATE
     15,  // BANK
     18,  // FULL PRE-TAX AMOUNT
+    15,  // SERVICE CHARGE
     20,  // DEPARTMENTS
     20,  // PAYMENT PRIORITIES
     30   // NOTES
@@ -172,6 +174,7 @@ const createPaymentsWorksheet = (sheetName, existingPayments, options) => {
         payment.fxRate || '1',
         payment.bank || '',
         payment.fullPretax || payment.amount || '',
+        payment.serviceChargeAmount || '',
         payment.department || '',
         payment.paymentPriority || '',
         payment.notes || ''
@@ -649,9 +652,10 @@ const transformImportedData = (rawData) => {
       fxRate: parseFloat(row[10]) || 1,
       bank: row[11] || '',
       fullPretax: parseFloat(row[12]) || 0,
-      department: row[13] || '',
-      paymentPriority: row[14] || '',
-      notes: row[15] || '',
+      serviceChargeAmount: parseFloat(row[13]) || 0,
+      department: row[14] || '',
+      paymentPriority: row[15] || '',
+      notes: row[16] || '',
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()

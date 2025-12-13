@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { collection, getDocs, doc, setDoc, deleteDoc, addDoc, onSnapshot } from 'firebase/firestore';
 import { ArrowLeft, LogOut, FileText, Download, Settings, Check, RefreshCw, FileDown, Upload, Plus, Save, X, Edit, Trash2 } from 'lucide-react';
 import Layout from '../components/Layout/Layout';
@@ -152,15 +152,22 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
         return summary;
     }, [budgetLines, selectedMonth]);
 
+    // Ref to track if data has been loaded (avoids stale closure bug)
+    const dataLoadedRef = useRef(false);
+
     // ✅ ENHANCED REAL-TIME LISTENER: Use optimized real-time service
     useEffect(() => {
         if (!db || !userId) return;
+
+        // Reset the ref on effect run
+        dataLoadedRef.current = false;
 
         console.log('[BudgetManagement] Setting up enhanced real-time service...');
 
         // Add a timeout to ensure data is loaded even if real-time service fails
         const dataTimeout = setTimeout(() => {
-            if (budgetLines.length === 0) {
+            // Use ref instead of state to avoid stale closure
+            if (!dataLoadedRef.current) {
                 console.log('[BudgetManagement] Timeout reached, loading data directly...');
                 loadBudgetDataDirectly();
             }
@@ -195,6 +202,7 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
 
                         console.log('[BudgetManagement] Setting budget lines with enhanced real-time data:', enhancedData.length);
                         setBudgetLines(enhancedData);
+                        dataLoadedRef.current = true; // Mark data as loaded
                     }
 
                     setLoading(false);
@@ -258,6 +266,7 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
 
                     console.log('[BudgetManagement] Setting budget lines with fallback data:', enhancedData.length);
                     setBudgetLines(enhancedData);
+                    dataLoadedRef.current = true; // Mark data as loaded
                 }
 
                 setLoading(false);
@@ -1179,6 +1188,58 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
                                     </button>
                                 )}
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Validation Panel Modal */}
+            {showValidationPanel && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-auto">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-gray-800">Budget Validation Results</h2>
+                            <button
+                                onClick={() => setShowValidationPanel(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        {validationIssues.length === 0 ? (
+                            <div className="text-center py-8">
+                                <Check className="w-16 h-16 text-green-500 mx-auto mb-4" />
+                                <p className="text-lg font-semibold text-green-700">All budget lines are valid!</p>
+                                <p className="text-gray-600">No issues found in your budget data.</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                                <p className="text-red-600 font-medium">
+                                    Found {validationIssues.length} budget line(s) with issues:
+                                </p>
+                                {validationIssues.map((issue, index) => (
+                                    <div key={index} className="border border-red-200 rounded-lg p-4 bg-red-50">
+                                        <h3 className="font-semibold text-gray-800 mb-2">
+                                            {issue.budgetLineName || issue.name || `Budget Line ${index + 1}`}
+                                        </h3>
+                                        <ul className="list-disc list-inside text-sm text-red-700">
+                                            {issue.validation?.issues?.map((err, i) => (
+                                                <li key={i}>{err.message || err}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        <div className="flex justify-end mt-6">
+                            <button
+                                onClick={() => setShowValidationPanel(false)}
+                                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+                            >
+                                Close
+                            </button>
                         </div>
                     </div>
                 </div>

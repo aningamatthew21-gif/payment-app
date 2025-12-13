@@ -39,7 +39,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
     // Form state for adding/editing
     const [formData, setFormData] = useState({
         date: '', paymentMode: '', invoiceNumber: '', vendors: '', descriptions: '', procurement: '',
-        taxType: '', vat: '', budgetLines: '', currency: '', fxRate: '', amount: '', momoCharge: '',
+        taxType: '', vat: '', budgetLines: '', currency: '', fxRate: '', amount: '', serviceCharge: '', momoCharge: '',
         department: '', paymentPriority: ''
     });
 
@@ -412,6 +412,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
             fxRate: payment.fxRate || '1',
             bank: payment.bank || '',
             amount: payment.fullPretax || payment.amount || '',
+            serviceCharge: payment.serviceChargeAmount || '',
             momoCharge: payment.momoCharge || '',
             department: payment.department || '',
             paymentPriority: payment.paymentPriority || '',
@@ -436,6 +437,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
             fxRate: '1',
             bank: '',
             amount: '',
+            serviceCharge: '',
             momoCharge: '',
             department: '',
             paymentPriority: ''
@@ -492,6 +494,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 fxRate: parseFloat(formData.fxRate) || 1,
                 bank: formData.bank || '',
                 fullPretax: parseFloat(formData.amount) || 0,
+                serviceChargeAmount: parseFloat(formData.serviceCharge) || 0,
                 momoCharge: parseFloat(formData.momoCharge) || 0,
                 department: formData.department || '',
                 paymentPriority: formData.paymentPriority || '',
@@ -684,6 +687,21 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                     <input type="number" name="amount" placeholder="Amount" value={formData.amount || ''} onChange={handleChange} className="p-2 border rounded-md w-full" />
                                 </div>
 
+                                {/* Service Charge */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Service Charge</label>
+                                    <input
+                                        type="number"
+                                        name="serviceCharge"
+                                        placeholder="Service Charge"
+                                        value={formData.serviceCharge || ''}
+                                        onChange={handleChange}
+                                        className="p-2 border rounded-md w-full bg-yellow-50 border-yellow-200"
+                                        title="Enter amount to calculate WHT on (if different from Total Amount)"
+                                    />
+                                    <p className="text-xs text-gray-500 mt-1">Leave empty if WHT applies to Total</p>
+                                </div>
+
                                 {/* Payment Mode */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">Payment Mode</label>
@@ -867,6 +885,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Currency</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">FX Rate</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Bank</th>
+                                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Service Charge</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WHT Rate</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">WHT Amount</th>
                                         <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Amount</th>
@@ -910,6 +929,13 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.currency}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.fxRate}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.bank}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                                                    {payment.serviceChargeAmount > 0 ? (
+                                                        <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">
+                                                            {safeToFixed(payment.serviceChargeAmount)}
+                                                        </span>
+                                                    ) : '-'}
+                                                </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">
                                                     {payment.whtRate ? `${(Number(payment.whtRate) * 100).toFixed(1).replace(/\.0$/, '')}%` : '-'}
                                                 </td>

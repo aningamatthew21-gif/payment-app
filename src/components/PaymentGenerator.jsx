@@ -349,6 +349,8 @@ const PaymentGenerator = ({
   useEffect(() => {
     const paymentData = {
       preTaxAmount,
+      // NEW: Pass service charge only if toggle is ON
+      serviceChargeAmount: state.useServiceCharge ? (state.serviceChargeAmount || 0) : 0,
       paymentPercentage,
       isPartialPayment,
       currency,
@@ -409,9 +411,11 @@ const PaymentGenerator = ({
     vatDecision,
     paymentMode,
     globalRates,
-    whtRate, // Add whtRate to dependency array
-    validationData, // Add validationData to dependency array
-    state.customMomoRate, // Add customMomoRate to trigger recalculation
+    whtRate,
+    validationData,
+    state.customMomoRate,
+    state.useServiceCharge, // Add to trigger recalculation when toggle changes
+    state.serviceChargeAmount, // Add to trigger recalculation when amount changes
     dispatch
   ]);
 
@@ -455,6 +459,19 @@ const PaymentGenerator = ({
     // Map MOMO charge from imported data (can be percentage or raw value)
     const importedMomoCharge = parseFloat(payment.momoCharge) || 0;
     dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'customMomoRate', value: importedMomoCharge > 1 ? importedMomoCharge / 100 : importedMomoCharge } });
+
+    // NEW: Handle Service Charge Logic from imported data
+    const importedServiceCharge = parseFloat(payment.serviceChargeAmount) || 0;
+    if (importedServiceCharge > 0) {
+      // Activate the toggle and set value
+      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'useServiceCharge', value: true } });
+      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: importedServiceCharge } });
+      console.log('[PaymentGenerator] Auto-detected Service Charge:', importedServiceCharge);
+    } else {
+      // Ensure it's reset if not present
+      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'useServiceCharge', value: false } });
+      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: 0 } });
+    }
 
     // Map priority if available, converting to lowercase to match value (e.g. 'HIGH' -> 'high')
     // If priority is missing, default to 'normal'
@@ -1137,7 +1154,7 @@ const PaymentGenerator = ({
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Pre-tax Amount</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Pre-tax Amount (Total Invoice)</label>
                   <input
                     type="number"
                     value={preTaxAmount}
@@ -1146,6 +1163,53 @@ const PaymentGenerator = ({
                     placeholder="0"
                   />
                 </div>
+
+                {/* SERVICE CHARGE SECTION */}
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium text-blue-800 flex items-center">
+                      <input
+                        type="checkbox"
+                        checked={state.useServiceCharge || false}
+                        onChange={(e) => {
+                          dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'useServiceCharge', value: e.target.checked } });
+                          // Reset amount if unchecked
+                          if (!e.target.checked) {
+                            dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: 0 } });
+                          }
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                      />
+                      Apply WHT on Service Charge Only?
+                    </label>
+
+                    {/* Tooltip/Help Icon */}
+                    <div className="group relative">
+                      <svg className="w-4 h-4 text-blue-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-10">
+                        Use this when WHT applies only to a specific fee (e.g., Boot Service Fee) and not the total invoice amount.
+                      </span>
+                    </div>
+                  </div>
+
+                  {state.useServiceCharge && (
+                    <div>
+                      <input
+                        type="number"
+                        value={state.serviceChargeAmount || ''}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: Number(e.target.value) } })}
+                        className="w-full p-2 border border-blue-300 rounded-md focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+                        placeholder="Enter Service Charge Amount"
+                      />
+                      <p className="text-xs text-blue-600 mt-1">
+                        WHT ({((whtRate || 0) * 100).toFixed(1)}%) will be calculated on ₵{Number(state.serviceChargeAmount || 0).toLocaleString()} instead of the total.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Process as Partial Payment?</label>
                   <input

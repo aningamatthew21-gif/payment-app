@@ -73,6 +73,7 @@ export const calculateMomoCharge = (amount, momoRate = 0) => {
 
 /**
  * Calculate total tax amount for a transaction using dynamic rates
+ * UPDATED: Added support for Service Charge WHT Base
  * @param {Object} transaction - Transaction object with all required fields
  * @param {Object} rates - Dynamic rates object
  * @returns {Object} Tax breakdown and totals
@@ -80,6 +81,8 @@ export const calculateMomoCharge = (amount, momoRate = 0) => {
 export const calculateTotalTaxes = (transaction, rates = {}) => {
   const {
     fullPretax = 0,
+    // NEW: If provided and > 0, WHT is calculated on THIS, not fullPretax
+    serviceChargeAmount = 0,
     procurementType = 'GOODS',
     taxType = 'STANDARD',
     vatDecision = 'NO',
@@ -97,30 +100,41 @@ export const calculateTotalTaxes = (transaction, rates = {}) => {
   } = rates;
 
   // VBA LOGIC: Follow exact sequence from VBA code
-  // 1. Start with Original Pre-Tax Amount
+  // 1. Start with Original Pre-Tax Amount (The Invoice Total)
   const originalPreTaxAmount = fullPretax;
 
-  // 2. Calculate Levies FIRST (based on Tax Type) using dynamic rate
+  // 2. Determine the Base for WHT Calculation
+  // If a specific service charge is defined and valid, use that. Otherwise, use the full amount.
+  const whtBase = (serviceChargeAmount > 0 && serviceChargeAmount <= originalPreTaxAmount)
+    ? serviceChargeAmount
+    : originalPreTaxAmount;
+
+  // 3. Calculate Levies FIRST (based on Tax Type) using dynamic rate
+  // Note: Levies are always on the full amount, not the service charge
   const levy = calculateLevy(originalPreTaxAmount, levyRate);
 
-  // 3. Calculate VAT on levy-inclusive amount (if VAT Decision is "YES") using dynamic rate
+  // 4. Calculate VAT on levy-inclusive amount (if VAT Decision is "YES") using dynamic rate
   let vat = 0;
   if (vatDecision === 'YES') {
     const vatBaseAmount = originalPreTaxAmount + levy; // VBA: VAT base = Pre-tax + Levy
     vat = vatBaseAmount * vatRate; // Dynamic VAT rate
   }
 
-  // 4. Calculate Gross Amount (Pre-tax + Levy + VAT)
+  // 5. Calculate Gross Amount (Pre-tax + Levy + VAT)
   const grossAmount = originalPreTaxAmount + levy + vat;
 
-  // 5. Calculate WHT ONLY for GHS/GHC currency (VBA logic) using dynamic rate
+  // 6. Calculate WHT ONLY for GHS/GHC currency (VBA logic) using dynamic rate
+  // UPDATED: Uses whtBase (service charge or full amount)
   let wht = 0;
   if (currency === 'GHS' || currency === 'GHC') {
-    wht = calculateWHT(originalPreTaxAmount, whtRate);
+    wht = calculateWHT(whtBase, whtRate);
     console.log(`[FinancialEngine] WHT calculation:`, {
       currency,
       procurementType,
-      preTaxAmount: originalPreTaxAmount,
+      whtBase: whtBase,
+      isServiceCharge: whtBase !== originalPreTaxAmount,
+      serviceChargeAmount: serviceChargeAmount,
+      fullPreTaxAmount: originalPreTaxAmount,
       whtRate: whtRate,
       whtAmount: wht,
       whtRatePercentage: `${(whtRate * 100).toFixed(2)}%`
@@ -129,10 +143,10 @@ export const calculateTotalTaxes = (transaction, rates = {}) => {
     console.log(`[FinancialEngine] WHT skipped - non-GHS currency: ${currency}`);
   }
 
-  // 6. Calculate Net Payable to Supplier (Gross - WHT)
+  // 7. Calculate Net Payable to Supplier (Gross - WHT)
   const netPayableToSupplier = grossAmount - wht;
 
-  // 7. Calculate MoMo Charge (if Payment Mode contains "MOMO") using dynamic rate
+  // 8. Calculate MoMo Charge (if Payment Mode contains "MOMO") using dynamic rate
   let momoCharge = 0;
   const isMomoPayment = paymentMode && paymentMode.toUpperCase().includes('MOMO');
   if (isMomoPayment) {
@@ -146,10 +160,10 @@ export const calculateTotalTaxes = (transaction, rates = {}) => {
     });
   }
 
-  // 8. Calculate Final Net Payable (Net Payable to Supplier + MoMo Charge)
+  // 9. Calculate Final Net Payable (Net Payable to Supplier + MoMo Charge)
   const finalNetPayable = netPayableToSupplier + momoCharge;
 
-  // 9. Calculate Budget Impact (USD)
+  // 10. Calculate Budget Impact (USD)
   let budgetImpactUSD = 0;
   if (currency === 'USD') {
     budgetImpactUSD = finalNetPayable;
@@ -165,12 +179,13 @@ export const calculateTotalTaxes = (transaction, rates = {}) => {
     totalTaxes: levy + vat + wht + momoCharge,
     netPayable: finalNetPayable,
     fullPretax: originalPreTaxAmount,
+    serviceChargeAmount: serviceChargeAmount, // Return for tracking
     currency: currency,
     originalAmount: originalPreTaxAmount,
     grossAmount: grossAmount,
     netPayableToSupplier: netPayableToSupplier,
     finalNetPayable: finalNetPayable,
-    usdEquivalent: budgetImpactUSD, // Updated logic
+    usdEquivalent: budgetImpactUSD,
     // Add rate information for debugging
     ratesUsed: {
       whtRate,
@@ -183,6 +198,7 @@ export const calculateTotalTaxes = (transaction, rates = {}) => {
 
 /**
  * Calculate partial payment amounts using dynamic rates
+ * UPDATED: Handles Service Charge Prorating
  * @param {Object} transaction - Full transaction object
  * @param {number} percentage - Percentage to pay (0-100)
  * @param {Object} rates - Dynamic rates object
@@ -197,10 +213,16 @@ export const calculatePartialPayment = (transaction, percentage, rates = {}) => 
   const paymentRatio = percentage / 100;
   const proratedPreTax = transaction.fullPretax * paymentRatio;
 
-  // Create new transaction with prorated pre-tax amount
+  // Prorate the service charge if it exists
+  const proratedServiceCharge = transaction.serviceChargeAmount
+    ? transaction.serviceChargeAmount * paymentRatio
+    : 0;
+
+  // Create new transaction with prorated amounts
   const proratedTransaction = {
     ...transaction,
-    fullPretax: proratedPreTax
+    fullPretax: proratedPreTax,
+    serviceChargeAmount: proratedServiceCharge
   };
 
   // Recalculate all taxes using the prorated amount and dynamic rates (VBA logic)
@@ -210,6 +232,7 @@ export const calculatePartialPayment = (transaction, percentage, rates = {}) => 
     originalAmount: transaction.fullPretax,
     paymentPercentage: percentage,
     proratedPreTax: proratedPreTax,
+    serviceChargeAmount: proratedServiceCharge,
     netPayable: proratedCalculation.netPayable,
     wht: proratedCalculation.wht,
     levy: proratedCalculation.levy,
@@ -483,6 +506,7 @@ export const updateBudgetBalancesAfterArchive = (transactions, budgetLines) => {
 export const calculatePayment = (paymentData, rates = {}) => {
   const {
     preTaxAmount = 0,
+    serviceChargeAmount = 0, // NEW: Service charge for WHT calculation
     paymentPercentage = 100,
     isPartialPayment = false,
     currency = 'GHS',
@@ -496,6 +520,7 @@ export const calculatePayment = (paymentData, rates = {}) => {
   // Build transaction object for calculateTotalTaxes
   const transaction = {
     fullPretax: preTaxAmount,
+    serviceChargeAmount, // Pass service charge to calculation
     procurementType,
     taxType,
     vatDecision,
@@ -523,7 +548,8 @@ export const calculatePayment = (paymentData, rates = {}) => {
     netPayable: calculation.netPayable || 0,
     grossAmount: calculation.grossAmount || 0,
     netPayableToSupplier: calculation.netPayableToSupplier || 0,
-    preTaxAmount: calculation.fullPretax || preTaxAmount
+    preTaxAmount: calculation.fullPretax || preTaxAmount,
+    serviceChargeAmount: calculation.serviceChargeAmount || 0 // Return for tracking
   };
 };
 

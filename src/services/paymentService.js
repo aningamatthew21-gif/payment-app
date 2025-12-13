@@ -1,5 +1,4 @@
 import { collection, addDoc, deleteDoc, doc, updateDoc, getDocs, runTransaction } from 'firebase/firestore';
-import { UndoService } from './UndoService';
 
 export const stagePayment = async (db, appId, paymentData) => {
   const stagedPaymentsCollection = collection(db, `artifacts/${appId}/public/data/stagedPayments`);
