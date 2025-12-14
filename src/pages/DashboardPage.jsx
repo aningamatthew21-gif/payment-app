@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { Settings, LogOut, CreditCard, LayoutDashboard, FileSpreadsheet, FileText, Landmark, Users } from 'lucide-react';
+import { Settings, LogOut, CreditCard, LayoutDashboard, FileSpreadsheet, FileText, Landmark, Users, BarChart2 } from 'lucide-react';
 import Layout from '../components/Layout/Layout';
-import DocumentGenerator from '../components/DocumentGenerator';
+import StrategicReportingHub from '../components/StrategicReportingHub';
 import TestSettingsPanel from '../components/TestSettingsPanel';
 import { safeToFixed } from '../utils/formatters';
 
@@ -12,7 +12,7 @@ const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTe
         availableBudget: 0,
         spentBudget: 0
     });
-    const [showDocumentGenerator, setShowDocumentGenerator] = useState(false);
+    const [showStrategicReports, setShowStrategicReports] = useState(false);
 
     // Load budget summary data
     useEffect(() => {
@@ -152,27 +152,26 @@ const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTe
                         <FileText size={24} />
                         <span>Master Log & WHT</span>
                     </button>
+
                     <button
-                        onClick={() => {
-                            // Open document generator modal
-                            setShowDocumentGenerator(true);
-                        }}
-                        className="w-full p-4 bg-purple-500 text-white font-semibold rounded-md text-lg hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
+                        onClick={() => setShowStrategicReports(true)}
+                        className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-semibold rounded-md text-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center justify-center space-x-2"
                     >
-                        <FileText size={24} />
-                        <span>Generate Documents</span>
+                        <BarChart2 size={24} />
+                        <span>Strategic Reports</span>
                     </button>
                 </div>
             </div>
 
-            {/* Document Generator Modal */}
-            {showDocumentGenerator && (
-                <DocumentGenerator
-                    isOpen={showDocumentGenerator}
-                    onClose={() => setShowDocumentGenerator(false)}
-                    sheetName="Dashboard"
-                    payments={[]}
-                    validationData={{}}
+
+
+            {/* Strategic Reporting Hub Modal */}
+            {showStrategicReports && (
+                <StrategicReportingHub
+                    isOpen={showStrategicReports}
+                    onClose={() => setShowStrategicReports(false)}
+                    db={db}
+                    appId={appId}
                 />
             )}
 

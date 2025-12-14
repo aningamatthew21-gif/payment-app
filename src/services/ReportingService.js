@@ -1,12 +1,320 @@
 import * as XLSX from 'xlsx';
+import { MasterLogExportService } from './MasterLogExportService';
+import { BudgetReportingService } from './BudgetReportingService';
 
 class ReportingService {
-  
+
+  /**
+   * NEW: Strategic Reporting Hub Methods
+   * Generates comprehensive report data for PDF generation with embedded infographics
+   */
+
+  /**
+   * Generates the master data object for the comprehensive report
+   * @param {Object} db - Firestore instance
+   * @param {string} appId - App ID
+   * @param {Date} startDate 
+   * @param {Date} endDate 
+   */
+  static async getComprehensiveReportData(db, appId, startDate, endDate) {
+    try {
+      console.log('[ReportingService] Generating comprehensive report data...', { startDate, endDate });
+
+      // 1. Fetch Raw Transaction Data (Source of Truth)
+      const dateFilters = {
+        dateFrom: startDate.toISOString(),
+        dateTo: endDate.toISOString()
+      };
+
+      const masterLogEntries = await MasterLogExportService.getMasterLogData(db, appId, dateFilters);
+      console.log(`[ReportingService] Fetched ${masterLogEntries.length} master log entries`);
+
+      // 2. Calculate all metrics
+      const financialMetrics = this.calculateFinancialMetrics(masterLogEntries);
+      const cashFlow = this.calculateCashFlow(masterLogEntries);
+      const weeklyTrends = this.calculateWeeklyTrends(masterLogEntries);
+      const vendorStats = this.calculateVendorStats(masterLogEntries);
+      const compliance = this.calculateComplianceStats(masterLogEntries);
+
+      // 3. Get budget data for efficiency scores and departmental analysis (if available)
+      let budgetReport = {
+        efficiencyScore: 0,
+        riskAssessment: { highRisk: [], mediumRisk: [], lowRisk: [] },
+        monthlySummary: { overspentLines: [], underspentLines: [] }
+      };
+      let budgetLines = [];
+
+      try {
+        const { collection, getDocs } = await import('firebase/firestore');
+        const budgetRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
+        const budgetSnapshot = await getDocs(budgetRef);
+        budgetLines = budgetSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+        if (budgetLines.length > 0) {
+          budgetReport = BudgetReportingService.generateBudgetPerformanceReport(budgetLines);
+        }
+      } catch (budgetError) {
+        console.warn('[ReportingService] Could not fetch budget data:', budgetError);
+      }
+
+      // 4. Calculate departmental and GL statistics
+      const deptStats = this.calculateDepartmentStats(masterLogEntries, budgetLines);
+      const glStats = this.calculateGLStats(masterLogEntries, budgetLines);
+
+      const reportData = {
+        period: { start: startDate, end: endDate },
+        generatedAt: new Date(),
+        financial: financialMetrics,
+        cashFlow: cashFlow,
+        weeklyTrends: weeklyTrends,
+        budget: {
+          efficiencyScore: budgetReport.performanceMetrics?.efficiencyScore || 0,
+          riskLevels: budgetReport.riskAssessment || { highRisk: [], mediumRisk: [], lowRisk: [] },
+          overspent: budgetReport.monthlySummary?.overspentLines || [],
+          underspent: budgetReport.monthlySummary?.underspentLines || []
+        },
+        vendors: vendorStats,
+        departmental: deptStats,
+        glAnalysis: glStats,
+        compliance: compliance
+      };
+
+      console.log('[ReportingService] Report data generated successfully');
+      return reportData;
+
+    } catch (error) {
+      console.error('[ReportingService] Failed to gather comprehensive data:', error);
+      throw error;
+    }
+  }
+
+  static calculateFinancialMetrics(entries) {
+    const totalSpend = entries.reduce((sum, e) => sum + (Number(e.netPayable_ThisTx) || 0), 0);
+
+    // Currency breakdown
+    const currencies = {};
+    entries.forEach(e => {
+      const curr = e.currency_Tx || 'GHS';
+      const amount = Number(e.netPayable_ThisTx) || 0;
+      currencies[curr] = (currencies[curr] || 0) + amount;
+    });
+
+    // Payment Mode Analysis
+    const modes = {};
+    entries.forEach(e => {
+      const mode = e.paymentMode_Tx || 'Unknown';
+      modes[mode] = (modes[mode] || 0) + (Number(e.netPayable_ThisTx) || 0);
+    });
+
+    return {
+      totalSpend,
+      transactionCount: entries.length,
+      currencyBreakdown: Object.entries(currencies).map(([name, value]) => ({
+        name,
+        value,
+        percentage: totalSpend > 0 ? (value / totalSpend) * 100 : 0
+      })),
+      paymentModes: Object.entries(modes).map(([name, value]) => ({
+        name,
+        value,
+        percentage: totalSpend > 0 ? (value / totalSpend) * 100 : 0
+      })),
+      averagePayment: entries.length > 0 ? totalSpend / entries.length : 0
+    };
+  }
+
+  static calculateCashFlow(entries) {
+    // Group by date for line chart
+    const dailyMap = {};
+    entries.forEach(e => {
+      // Use finalizationDate or logTimestamp
+      const dateStr = e.finalizationDate ? e.finalizationDate.split('T')[0] : null;
+      if (!dateStr) return;
+
+      dailyMap[dateStr] = (dailyMap[dateStr] || 0) + (Number(e.netPayable_ThisTx) || 0);
+    });
+
+    return Object.entries(dailyMap)
+      .sort((a, b) => new Date(a[0]) - new Date(b[0]))
+      .map(([date, amount]) => ({ date, amount }));
+  }
+
+  static calculateWeeklyTrends(entries) {
+    // Week grouping logic
+    const weeks = {};
+    entries.forEach(e => {
+      if (!e.finalizationDate) return;
+      const date = new Date(e.finalizationDate);
+
+      // Get ISO week number
+      const startOfYear = new Date(date.getFullYear(), 0, 1);
+      const pastDays = (date - startOfYear) / 86400000;
+      const weekNum = Math.ceil((pastDays + startOfYear.getDay() + 1) / 7);
+      const weekKey = `Week ${weekNum}`;
+
+      weeks[weekKey] = (weeks[weekKey] || 0) + (Number(e.netPayable_ThisTx) || 0);
+    });
+
+    return Object.entries(weeks)
+      .map(([week, total]) => ({ week, total }))
+      .sort((a, b) => {
+        const aNum = parseInt(a.week.split(' ')[1]);
+        const bNum = parseInt(b.week.split(' ')[1]);
+        return aNum - bNum;
+      });
+  }
+
+  static calculateVendorStats(entries) {
+    const vendors = {};
+    entries.forEach(e => {
+      const vName = e.vendorName || 'Unknown';
+      if (!vendors[vName]) vendors[vName] = { name: vName, volume: 0, count: 0 };
+      vendors[vName].volume += (Number(e.netPayable_ThisTx) || 0);
+      vendors[vName].count += 1;
+    });
+
+    const vendorArray = Object.values(vendors);
+    const sortedByVol = [...vendorArray].sort((a, b) => b.volume - a.volume);
+    const sortedByFreq = [...vendorArray].sort((a, b) => b.count - a.count);
+
+    return {
+      topByVolume: sortedByVol.slice(0, 5),
+      topByFreq: sortedByFreq.slice(0, 5),
+      totalUnique: Object.keys(vendors).length
+    };
+  }
+
+  static calculateComplianceStats(entries) {
+    const totalWHT = entries.reduce((sum, e) => sum + (Number(e.whtAmount_ThisTx) || 0), 0);
+    const totalVAT = entries.reduce((sum, e) => sum + (Number(e.vatAmount_ThisTx) || 0), 0);
+    const totalLevy = entries.reduce((sum, e) => sum + (Number(e.levyAmount_ThisTx) || 0), 0);
+    const totalGross = entries.reduce((sum, e) => sum + (Number(e.pretaxAmount_ThisTx) || 0), 0);
+
+    return {
+      totalLiability: totalWHT + totalVAT + totalLevy,
+      breakdown: {
+        wht: totalWHT,
+        vat: totalVAT,
+        levy: totalLevy,
+        gross: totalGross
+      },
+      auditCount: entries.length
+    };
+  }
+
+  /**
+   * Aggregates spend by Department with GL sub-breakdown
+   * @param {Array} entries - Master log entries
+   * @param {Array} budgetLines - Budget line definitions
+   * @returns {Array} Sorted array of department statistics
+   */
+  static calculateDepartmentStats(entries, budgetLines) {
+    // 1. Create a lookup map for BudgetLineName -> DeptDetails
+    const budgetMap = {};
+    budgetLines.forEach(b => {
+      budgetMap[b.name] = {
+        code: b.deptCode || 'UNCATEGORIZED',
+        name: b.deptDimension || 'Uncategorized'
+      };
+    });
+
+    const deptMap = {};
+
+    entries.forEach(e => {
+      const bLineName = e.budgetLine || 'Unknown';
+      const amount = Number(e.netPayable_ThisTx) || 0;
+
+      // Lookup Department
+      const deptInfo = budgetMap[bLineName] || { code: 'UNCATEGORIZED', name: 'Uncategorized' };
+      const deptKey = deptInfo.code;
+
+      if (!deptMap[deptKey]) {
+        deptMap[deptKey] = {
+          code: deptKey,
+          name: deptInfo.name,
+          totalSpend: 0,
+          transactionCount: 0,
+          // Track individual GLs within this department for sub-breakdown
+          glBreakdown: {}
+        };
+      }
+
+      deptMap[deptKey].totalSpend += amount;
+      deptMap[deptKey].transactionCount += 1;
+
+      // Add to sub-breakdown
+      if (!deptMap[deptKey].glBreakdown[bLineName]) {
+        deptMap[deptKey].glBreakdown[bLineName] = 0;
+      }
+      deptMap[deptKey].glBreakdown[bLineName] += amount;
+    });
+
+    // Convert to Array and Sort by Spend
+    const sortedDepts = Object.values(deptMap)
+      .map(d => ({
+        ...d,
+        // Convert GL Breakdown object to sorted array
+        topGLs: Object.entries(d.glBreakdown)
+          .map(([name, amount]) => ({ name, amount }))
+          .sort((a, b) => b.amount - a.amount)
+          .slice(0, 5) // Keep top 5 per dept
+      }))
+      .sort((a, b) => b.totalSpend - a.totalSpend);
+
+    return sortedDepts;
+  }
+
+  /**
+   * Aggregates spend by GL (Geo) Account
+   * @param {Array} entries - Master log entries
+   * @param {Array} budgetLines - Budget line definitions
+   * @returns {Array} Top 10 GL accounts by spending
+   */
+  static calculateGLStats(entries, budgetLines) {
+    // 1. Create lookup for BudgetLineName -> AccountNo
+    const budgetMap = {};
+    budgetLines.forEach(b => {
+      budgetMap[b.name] = b.accountNo || 'N/A';
+    });
+
+    const glMap = {};
+
+    entries.forEach(e => {
+      const bLineName = e.budgetLine || 'Unknown';
+      const amount = Number(e.netPayable_ThisTx) || 0;
+      const accountNo = budgetMap[bLineName] || 'N/A';
+
+      // Key by AccountNo + Name to ensure uniqueness
+      const key = `${accountNo}_${bLineName}`;
+
+      if (!glMap[key]) {
+        glMap[key] = {
+          accountNo,
+          name: bLineName,
+          totalSpend: 0,
+          count: 0
+        };
+      }
+
+      glMap[key].totalSpend += amount;
+      glMap[key].count += 1;
+    });
+
+    return Object.values(glMap)
+      .sort((a, b) => b.totalSpend - a.totalSpend)
+      .slice(0, 10); // Return Top 10 Global GLs
+  }
+
+  /**
+   * END: Strategic Reporting Hub Methods
+   * Existing methods below...
+   */
+
   // Generate comprehensive financial report
   static async generateFinancialReport(data, reportType = 'comprehensive') {
     try {
-      const wb = XLSX.utils.book();
-      
+      const wb = XLSX.utils.book_new();
+
       switch (reportType) {
         case 'comprehensive':
           return await this.generateComprehensiveReport(wb, data);
@@ -56,10 +364,10 @@ class ReportingService {
         currency.percentage.toFixed(1) + "%"
       ])
     ];
-    
+
     const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, summaryWs, "Executive Summary");
-    
+
     // Payment Details Sheet
     if (data.paymentDetails) {
       const paymentHeaders = [
@@ -79,7 +387,7 @@ class ReportingService {
         "MoMo Charge",
         "Net Amount"
       ];
-      
+
       const paymentData = [
         paymentHeaders,
         ...data.paymentDetails.map(payment => [
@@ -100,11 +408,11 @@ class ReportingService {
           payment.netAmount || payment.amount || 0
         ])
       ];
-      
+
       const paymentWs = XLSX.utils.aoa_to_sheet(paymentData);
       XLSX.utils.book_append_sheet(wb, paymentWs, "Payment Details");
     }
-    
+
     // Budget Analysis Sheet
     if (data.budgetAnalysis) {
       const budgetHeaders = [
@@ -116,7 +424,7 @@ class ReportingService {
         "Last Payment Date",
         "Currency Breakdown"
       ];
-      
+
       const budgetData = [
         budgetHeaders,
         ...data.budgetAnalysis.map(budget => [
@@ -129,11 +437,11 @@ class ReportingService {
           budget.currencyBreakdown?.map(c => `${c.currency}: ${c.amount}`).join(", ") || "N/A"
         ])
       ];
-      
+
       const budgetWs = XLSX.utils.aoa_to_sheet(budgetData);
       XLSX.utils.book_append_sheet(wb, budgetWs, "Budget Analysis");
     }
-    
+
     // Vendor Performance Sheet
     if (data.vendorPerformance) {
       const vendorHeaders = [
@@ -144,7 +452,7 @@ class ReportingService {
         "Budget Lines",
         "Last Payment Date"
       ];
-      
+
       const vendorData = [
         vendorHeaders,
         ...data.vendorPerformance.map(vendor => [
@@ -156,11 +464,11 @@ class ReportingService {
           vendor.lastPayment ? new Date(vendor.lastPayment).toLocaleDateString() : "N/A"
         ])
       ];
-      
+
       const vendorWs = XLSX.utils.aoa_to_sheet(vendorData);
       XLSX.utils.book_append_sheet(wb, vendorWs, "Vendor Performance");
     }
-    
+
     // Monthly Trends Sheet
     if (data.monthlyTrends) {
       const monthlyHeaders = [
@@ -171,7 +479,7 @@ class ReportingService {
         "Budget Lines Used",
         "Unique Vendors"
       ];
-      
+
       const monthlyData = [
         monthlyHeaders,
         ...data.monthlyTrends.map(month => [
@@ -183,11 +491,11 @@ class ReportingService {
           month.vendors || 0
         ])
       ];
-      
+
       const monthlyWs = XLSX.utils.aoa_to_sheet(monthlyData);
       XLSX.utils.book_append_sheet(wb, monthlyWs, "Monthly Trends");
     }
-    
+
     return this.generateExcelFile(wb, "Comprehensive_Financial_Report");
   }
 
@@ -212,10 +520,10 @@ class ReportingService {
       ["Weekly Average", data.weeklyAverage || 0],
       ["Monthly Average", data.monthlyAverage || 0]
     ];
-    
+
     const overviewWs = XLSX.utils.aoa_to_sheet(overviewData);
     XLSX.utils.book_append_sheet(wb, overviewWs, "Budget Overview");
-    
+
     // Detailed Budget Analysis
     if (data.budgetLines) {
       const budgetHeaders = [
@@ -228,7 +536,7 @@ class ReportingService {
         "Currency Mix",
         "Spending Trend"
       ];
-      
+
       const budgetData = [
         budgetHeaders,
         ...data.budgetLines.map(budget => [
@@ -242,11 +550,11 @@ class ReportingService {
           this.calculateSpendingTrend(budget.spendingPatterns)
         ])
       ];
-      
+
       const budgetWs = XLSX.utils.aoa_to_sheet(budgetData);
       XLSX.utils.book_append_sheet(wb, budgetWs, "Detailed Budget Analysis");
     }
-    
+
     // Spending Patterns by Category
     if (data.categoryAnalysis) {
       const categoryHeaders = [
@@ -256,16 +564,16 @@ class ReportingService {
         "Payment Count",
         "Percentage of Total"
       ];
-      
+
       const categoryData = [
         categoryHeaders,
         ...this.flattenCategoryData(data.categoryAnalysis)
       ];
-      
+
       const categoryWs = XLSX.utils.aoa_to_sheet(categoryData);
       XLSX.utils.book_append_sheet(wb, categoryWs, "Category Analysis");
     }
-    
+
     return this.generateExcelFile(wb, "Budget_Analysis_Report");
   }
 
@@ -286,10 +594,10 @@ class ReportingService {
       ["Top Vendor by Volume", data.topVendorByVolume || "N/A"],
       ["Top Vendor by Count", data.topVendorByCount || "N/A"]
     ];
-    
+
     const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, summaryWs, "Vendor Summary");
-    
+
     // Vendor Performance Details
     if (data.vendorPerformance) {
       const vendorHeaders = [
@@ -302,7 +610,7 @@ class ReportingService {
         "Payment Frequency",
         "Performance Rating"
       ];
-      
+
       const vendorData = [
         vendorHeaders,
         ...data.vendorPerformance.map(vendor => [
@@ -316,11 +624,11 @@ class ReportingService {
           this.calculatePerformanceRating(vendor)
         ])
       ];
-      
+
       const vendorWs = XLSX.utils.aoa_to_sheet(vendorData);
       XLSX.utils.book_append_sheet(wb, vendorWs, "Vendor Performance");
     }
-    
+
     // Vendor Spending by Budget Line
     if (data.vendorSpendingByBudget) {
       const spendingHeaders = [
@@ -330,16 +638,16 @@ class ReportingService {
         "Payment Count",
         "Percentage of Vendor Total"
       ];
-      
+
       const spendingData = [
         spendingHeaders,
         ...this.flattenVendorSpendingData(data.vendorSpendingByBudget)
       ];
-      
+
       const spendingWs = XLSX.utils.aoa_to_sheet(spendingData);
       XLSX.utils.book_append_sheet(wb, spendingWs, "Vendor Spending by Budget");
     }
-    
+
     return this.generateExcelFile(wb, "Vendor_Performance_Report");
   }
 
@@ -366,10 +674,10 @@ class ReportingService {
       ["VAT Compliance", this.checkVATCompliance(data.taxSummary?.totalVAT, data.vatableAmount)],
       ["Levy Compliance", this.checkLevyCompliance(data.totalLevy, data.goodsAmount)]
     ];
-    
+
     const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, summaryWs, "Tax Summary");
-    
+
     // WHT Details Sheet
     if (data.whtDetails) {
       const whtHeaders = [
@@ -382,7 +690,7 @@ class ReportingService {
         "Payment Date",
         "Budget Line"
       ];
-      
+
       const whtData = [
         whtHeaders,
         ...data.whtDetails.map(wht => [
@@ -396,11 +704,11 @@ class ReportingService {
           wht.budgetLine
         ])
       ];
-      
+
       const whtWs = XLSX.utils.aoa_to_sheet(whtData);
       XLSX.utils.book_append_sheet(wb, whtWs, "WHT Details");
     }
-    
+
     // VAT Details Sheet
     if (data.vatDetails) {
       const vatHeaders = [
@@ -413,7 +721,7 @@ class ReportingService {
         "Payment Date",
         "VAT Status"
       ];
-      
+
       const vatData = [
         vatHeaders,
         ...data.vatDetails.map(vat => [
@@ -427,11 +735,11 @@ class ReportingService {
           vat.vatStatus
         ])
       ];
-      
+
       const vatWs = XLSX.utils.aoa_to_sheet(vatData);
       XLSX.utils.book_append_sheet(wb, vatWs, "VAT Details");
     }
-    
+
     return this.generateExcelFile(wb, "Tax_Compliance_Report");
   }
 
@@ -451,10 +759,10 @@ class ReportingService {
       ["Average Monthly Spending", data.averageMonthlySpending || 0],
       ["Growth Rate", data.growthRate ? `${data.growthRate.toFixed(2)}%` : "N/A"]
     ];
-    
+
     const overviewWs = XLSX.utils.aoa_to_sheet(overviewData);
     XLSX.utils.book_append_sheet(wb, overviewWs, "Monthly Overview");
-    
+
     // Monthly Trends Details
     if (data.monthlyTrends) {
       const monthlyHeaders = [
@@ -467,7 +775,7 @@ class ReportingService {
         "Growth from Previous",
         "Trend"
       ];
-      
+
       const monthlyData = [
         monthlyHeaders,
         ...data.monthlyTrends.map((month, index) => [
@@ -481,11 +789,11 @@ class ReportingService {
           this.calculateTrend(data.monthlyTrends, index)
         ])
       ];
-      
+
       const monthlyWs = XLSX.utils.aoa_to_sheet(monthlyData);
       XLSX.utils.book_append_sheet(wb, monthlyWs, "Monthly Trends");
     }
-    
+
     // Seasonal Analysis
     if (data.seasonalAnalysis) {
       const seasonalHeaders = [
@@ -495,7 +803,7 @@ class ReportingService {
         "Average Payment",
         "Percentage of Year"
       ];
-      
+
       const seasonalData = [
         seasonalHeaders,
         ...Object.entries(data.seasonalAnalysis).map(([season, data]) => [
@@ -506,24 +814,24 @@ class ReportingService {
           data.percentageOfYear.toFixed(1) + "%"
         ])
       ];
-      
+
       const seasonalWs = XLSX.utils.aoa_to_sheet(seasonalData);
       XLSX.utils.book_append_sheet(wb, seasonalWs, "Seasonal Analysis");
     }
-    
+
     return this.generateExcelFile(wb, "Monthly_Trends_Report");
   }
 
   // Helper methods
   static calculateSpendingTrend(patterns) {
     if (!patterns || patterns.length < 2) return "Insufficient Data";
-    
+
     const recent = patterns.slice(-3).reduce((sum, p) => sum + p.amount, 0);
     const previous = patterns.slice(-6, -3).reduce((sum, p) => sum + p.amount, 0);
-    
+
     if (previous === 0) return "New";
     const change = ((recent - previous) / previous) * 100;
-    
+
     if (change > 10) return "Increasing";
     if (change < -10) return "Decreasing";
     return "Stable";
@@ -531,10 +839,10 @@ class ReportingService {
 
   static calculatePaymentFrequency(count, lastPayment, firstPayment) {
     if (!lastPayment || !firstPayment || count < 2) return "N/A";
-    
+
     const days = (new Date(lastPayment) - new Date(firstPayment)) / (1000 * 60 * 60 * 24);
     const frequency = days / (count - 1);
-    
+
     if (frequency <= 7) return "Weekly";
     if (frequency <= 30) return "Monthly";
     if (frequency <= 90) return "Quarterly";
@@ -543,7 +851,7 @@ class ReportingService {
 
   static calculatePerformanceRating(vendor) {
     const score = (vendor.totalAmount / 10000) + (vendor.paymentCount * 0.1);
-    
+
     if (score >= 10) return "Excellent";
     if (score >= 5) return "Good";
     if (score >= 2) return "Average";
@@ -556,11 +864,11 @@ class ReportingService {
     if (!expectedWHTRate || expectedWHTRate === 0) {
       return "Rate Not Available"; // Cannot check compliance without rate from database
     }
-    
+
     const expectedWHT = totalAmount * expectedWHTRate;
     const variance = Math.abs(whtAmount - expectedWHT);
     const compliance = (variance / expectedWHT) * 100;
-    
+
     if (compliance <= 5) return "Compliant";
     if (compliance <= 10) return "Minor Variance";
     return "Review Required";
@@ -571,7 +879,7 @@ class ReportingService {
     const expectedVAT = vatableAmount * 0.125;
     const variance = Math.abs(vatAmount - expectedVAT);
     const compliance = (variance / expectedVAT) * 100;
-    
+
     if (compliance <= 5) return "Compliant";
     if (compliance <= 10) return "Minor Variance";
     return "Review Required";
@@ -582,7 +890,7 @@ class ReportingService {
     const expectedLevy = goodsAmount * 0.01;
     const variance = Math.abs(levyAmount - expectedLevy);
     const compliance = (variance / expectedLevy) * 100;
-    
+
     if (compliance <= 5) return "Compliant";
     if (compliance <= 10) return "Minor Variance";
     return "Review Required";
@@ -596,10 +904,10 @@ class ReportingService {
 
   static calculateTrend(trends, index) {
     if (index < 2) return "Insufficient Data";
-    
+
     const recent = trends.slice(index - 2, index + 1).map(t => t.totalAmount);
     const slope = (recent[2] - recent[0]) / 2;
-    
+
     if (slope > 0) return "Upward";
     if (slope < 0) return "Downward";
     return "Stable";
@@ -607,7 +915,7 @@ class ReportingService {
 
   static flattenCategoryData(categoryAnalysis) {
     const flattened = [];
-    
+
     Object.entries(categoryAnalysis).forEach(([category, items]) => {
       items.forEach(item => {
         flattened.push([
@@ -619,13 +927,13 @@ class ReportingService {
         ]);
       });
     });
-    
+
     return flattened;
   }
 
   static flattenVendorSpendingData(vendorSpendingByBudget) {
     const flattened = [];
-    
+
     vendorSpendingByBudget.forEach(vendor => {
       vendor.budgetLines.forEach(budget => {
         flattened.push([
@@ -637,7 +945,7 @@ class ReportingService {
         ]);
       });
     });
-    
+
     return flattened;
   }
 
@@ -655,10 +963,10 @@ class ReportingService {
   static generateExcelFile(wb, filename) {
     try {
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
-      const blob = new Blob([excelBuffer], { 
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+      const blob = new Blob([excelBuffer], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
-      
+
       return {
         blob,
         filename: `${filename}_${new Date().toISOString().slice(0, 10)}.xlsx`
@@ -682,4 +990,4 @@ class ReportingService {
   }
 }
 
-export default ReportingService; 
+export default ReportingService;
