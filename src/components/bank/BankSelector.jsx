@@ -1,8 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronLeft, Plus } from 'lucide-react';
 import BankCard from './BankCard';
+import AddBankModal from './AddBankModal';
 
-const BankSelector = ({ banks, onSelectBank, onBack }) => {
+const BankSelector = ({ banks, onSelectBank, onBack, db, appId, userId, onBankAdded }) => {
+    const [showAddModal, setShowAddModal] = useState(false);
+
+    const handleBankAdded = () => {
+        setShowAddModal(false);
+        if (onBankAdded) {
+            onBankAdded(); // Trigger refresh in parent
+        }
+    };
+
     return (
         <div className="space-y-6">
             <div className="flex items-center space-x-4 mb-8">
@@ -28,15 +38,29 @@ const BankSelector = ({ banks, onSelectBank, onBack }) => {
                 ))}
 
                 {/* Add New Bank Placeholder */}
-                <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-all cursor-pointer min-h-[200px]">
+                <div
+                    onClick={() => setShowAddModal(true)}
+                    className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-blue-300 hover:text-blue-500 hover:bg-blue-50 transition-all cursor-pointer min-h-[200px]"
+                >
                     <div className="p-3 bg-white rounded-full shadow-sm mb-3">
                         <Plus size={24} />
                     </div>
                     <span className="font-medium">Add New Bank</span>
                 </div>
             </div>
+
+            {/* Add Bank Modal */}
+            <AddBankModal
+                isOpen={showAddModal}
+                onClose={() => setShowAddModal(false)}
+                db={db}
+                appId={appId}
+                userId={userId}
+                onSuccess={handleBankAdded}
+            />
         </div>
     );
 };
 
 export default BankSelector;
+

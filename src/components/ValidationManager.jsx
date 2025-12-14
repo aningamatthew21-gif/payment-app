@@ -26,6 +26,8 @@ import {
 } from 'firebase/firestore';
 import { exportValidationData, importValidationData } from '../services/ExcelService.js';
 import { VendorService } from '../services/VendorService.js';
+import { BankService } from '../services/BankService';
+import { cleanupOldBanksFromValidation } from '../utils/BankMigrationUtils';
 
 const VALIDATION_FIELDS = {
   paymentModes: {
@@ -226,6 +228,33 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
         }));
       } catch (vendorError) {
         console.error('Error loading vendors:', vendorError);
+      }
+
+      // Load banks from BankService
+      try {
+        console.log('Loading banks from BankService...');
+
+        // First, clean up any old bank entries from validation collection
+        // This is a one-time migration step that's safe to run multiple times
+        try {
+          const cleanupResult = await cleanupOldBanksFromValidation(db, appId);
+          if (cleanupResult.success && cleanupResult.deletedCount > 0) {
+            console.log(`[ValidationManager] ${cleanupResult.message}`);
+          }
+        } catch (cleanupError) {
+          console.warn('[ValidationManager] Cleanup of old banks failed (non-critical):', cleanupError);
+        }
+
+        // Now load banks from Bank Management
+        const banks = await BankService.getAllBanks(db, appId);
+        data.banks = banks.map(b => ({
+          id: b.id,
+          value: b.name,
+          description: `${b.accountNumber} - ${b.currency}`,
+          isActive: b.status !== 'inactive'
+        }));
+      } catch (bankError) {
+        console.error('Error loading banks:', bankError);
       }
 
       console.log('Processed validation data:', data);
@@ -765,10 +794,6 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
                   <button
                     onClick={() => {
                       onClose();
-                      // Assuming navigation is handled via URL hash or similar mechanism in parent
-                      // or just let the user navigate manually if we can't trigger it here easily.
-                      // Ideally we should pass a navigation callback, but for now we'll just close.
-                      // If we can redirect:
                       if (window.location.hash === '#vendorManagement') {
                         window.location.reload();
                       } else {
@@ -778,6 +803,30 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
                     className="px-4 py-2 bg-cyan-600 text-white rounded-md hover:bg-cyan-700 transition-colors"
                   >
                     Go to Vendor Management
+                  </button>
+                </div>
+              ) : activeFieldManager === 'banks' ? (
+                <div className="bg-emerald-50 p-4 rounded-lg mb-6 border border-emerald-200">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Info size={20} className="text-emerald-600" />
+                    <h4 className="font-medium text-emerald-900">Banks Managed in Bank Management</h4>
+                  </div>
+                  <p className="text-sm text-emerald-700 mb-3">
+                    Banks are now managed in the dedicated Bank Management module.
+                    To add or modify bank accounts, please use the Bank Management page.
+                  </p>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      if (window.location.hash === '#bankManagement') {
+                        window.location.reload();
+                      } else {
+                        window.location.hash = '#bankManagement';
+                      }
+                    }}
+                    className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors"
+                  >
+                    Go to Bank Management
                   </button>
                 </div>
               ) : activeFieldManager === 'companySettings' ? (

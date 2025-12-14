@@ -27,6 +27,7 @@ import { DocumentGenerationService } from '../services/DocumentGenerationService
 import { VoucherBalanceService } from '../services/VoucherBalanceService';
 import { PaymentFinalizationService } from '../services/PaymentFinalizationService';
 import { VendorService } from '../services/VendorService';
+import { BankService } from '../services/BankService';
 import ProcessingStatusModal from './ProcessingStatusModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
 import * as pdfjsLib from 'pdfjs-dist';
@@ -292,6 +293,20 @@ const PaymentGenerator = ({
         }));
       } catch (vendorError) {
         console.error('Error loading vendors:', vendorError);
+      }
+
+      // Load banks from BankService
+      try {
+        const banks = await BankService.getAllBanks(db, appId);
+        data.banks = banks.map(b => ({
+          id: b.id,
+          value: b.name,
+          description: `${b.accountNumber} - ${b.currency}`,
+          isActive: b.status !== 'inactive'
+        }));
+        console.log(`[PaymentGenerator] Loaded ${data.banks.length} banks from BankService`);
+      } catch (bankError) {
+        console.error('[PaymentGenerator] Error loading banks:', bankError);
       }
 
       setValidationData(data);

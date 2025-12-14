@@ -9,6 +9,7 @@ import { MasterLogService } from './MasterLogService';
 import { WHTReturnService } from './WHTReturnService';
 import { UndoService } from './UndoService';
 import { BudgetUpdateService } from './BudgetUpdateService.js';
+import { BankService } from './BankService';
 
 class PaymentFinalizationService {
   /**
@@ -48,6 +49,10 @@ class PaymentFinalizationService {
       // Process WHT items
       onProgress('WHT_PROCESSING');
       const whtResult = await this.processWHTItems(db, appId, userId, payments, batchId);
+
+      // NEW: Process bank deduction (atomic ledger entry + balance update)
+      onProgress('BANK_DEDUCTION');
+      const bankResult = await this.processBankDeduction(db, appId, userId, payments, batchId, metadata);
 
       // Update payment statuses
       onProgress('STATUS_UPDATE');
@@ -475,6 +480,130 @@ class PaymentFinalizationService {
   }
 
   /**
+   * Process bank deduction for finalized payments
+   * Aggregates amounts by bank and creates atomic ledger entries
+   * @param {Object} db - Firestore database instance
+   * @param {string} appId - Application ID
+   * @param {string} userId - User ID
+   * @param {Array} payments - Array of payments
+   * @param {string} batchId - Batch ID
+   * @param {Object} metadata - Additional metadata
+   * @returns {Promise<Object>} Bank deduction result
+   */
+  static async processBankDeduction(db, appId, userId, payments, batchId, metadata = {}) {
+    try {
+      console.log('[PaymentFinalizationService] Processing bank deductions for batch:', batchId);
+
+      // Group payments by bank
+      const bankGroups = {};
+
+      for (const payment of payments) {
+        const bankName = payment.bank || payment.bankName;
+
+        if (!bankName) {
+          console.warn(`[PaymentFinalizationService] Payment ${payment.id} has no bank specified, skipping bank deduction`);
+          continue;
+        }
+
+        if (!bankGroups[bankName]) {
+          bankGroups[bankName] = {
+            bankName,
+            totalAmount: 0,
+            paymentCount: 0,
+            payments: [],
+            vendors: new Set(), // Track unique vendors
+            descriptions: [] // Track payment descriptions
+          };
+        }
+
+        const netPayable = Number(payment.netPayable || payment.amountThisTransaction || 0);
+        bankGroups[bankName].totalAmount += netPayable;
+        bankGroups[bankName].paymentCount++;
+        bankGroups[bankName].payments.push(payment.id);
+
+        // Collect vendor names
+        if (payment.vendor || payment.vendors) {
+          bankGroups[bankName].vendors.add(payment.vendor || payment.vendors);
+        }
+
+        // Collect descriptions
+        if (payment.description || payment.descriptions) {
+          bankGroups[bankName].descriptions.push(payment.description || payment.descriptions);
+        }
+      }
+
+      console.log('[PaymentFinalizationService] Bank groups:', bankGroups);
+
+      // Process each bank group
+      const results = [];
+      const errors = [];
+
+      for (const [bankName, group] of Object.entries(bankGroups)) {
+        try {
+          // Find bank by name
+          const banks = await BankService.getAllBanks(db, appId);
+          const bank = banks.find(b => b.name === bankName);
+
+          if (!bank) {
+            console.error(`[PaymentFinalizationService] Bank not found: ${bankName}`);
+            errors.push({ bankName, error: 'Bank not found' });
+            continue;
+          }
+
+          // Build enriched metadata
+          const enrichedMetadata = {
+            ...metadata,
+            paymentIds: group.payments,
+            vendors: Array.from(group.vendors).join(', '), // Convert Set to comma-separated string
+            description: group.descriptions.length > 0
+              ? group.descriptions.join('; ') // Join multiple descriptions
+              : `Payment batch finalization (${group.paymentCount} payment${group.paymentCount > 1 ? 's' : ''})`
+          };
+
+          // Process deduction
+          const deductionResult = await BankService.processPaymentDeduction(db, appId, {
+            bankId: bank.id,
+            bankName: bank.name,
+            amount: group.totalAmount,
+            batchId,
+            paymentCount: group.paymentCount,
+            userId,
+            metadata: enrichedMetadata
+          });
+
+          console.log(`[PaymentFinalizationService] Bank deduction successful for ${bankName}: `, deductionResult);
+
+          results.push({
+            bankName,
+            bankId: bank.id,
+            amount: group.totalAmount,
+            paymentCount: group.paymentCount,
+            newBalance: deductionResult.newBalance,
+            previousBalance: deductionResult.previousBalance
+          });
+
+        } catch (error) {
+          console.error(`[PaymentFinalizationService] Bank deduction failed for ${bankName}: `, error);
+          errors.push({ bankName, error: error.message });
+        }
+      }
+
+      console.log(`[PaymentFinalizationService] Bank deductions completed: ${results.length} successful, ${errors.length} failed`);
+
+      return {
+        successfulDeductions: results.length,
+        failedDeductions: errors.length,
+        results,
+        errors
+      };
+
+    } catch (error) {
+      console.error('[PaymentFinalizationService] Error processing bank deductions:', error);
+      throw error;
+    }
+  }
+
+  /**
  * Update payment statuses to finalized with partial payment support and double-processing prevention
  * @param {Object} db - Firestore database instance
  * @param {string} appId - Application ID
@@ -497,7 +626,7 @@ class PaymentFinalizationService {
 
         // Skip TEMP IDs that weren't saved to Firestore
         if (payment.id.toString().startsWith('TEMP-')) {
-          console.log(`[PaymentFinalizationService] Skipping status update for TEMP payment: ${payment.id}`);
+          console.log(`[PaymentFinalizationService] Skipping status update for TEMP payment: ${payment.id} `);
           continue;
         }
 
@@ -507,7 +636,7 @@ class PaymentFinalizationService {
           if (metadata.weeklySheetId && metadata.weeklySheetId !== 'Ad-hoc') {
             paymentRef = doc(
               db,
-              `artifacts/${appId}/public/data/weeklySheets/${metadata.weeklySheetId}/payments`,
+              `artifacts / ${appId} /public/data / weeklySheets / ${metadata.weeklySheetId}/payments`,
               payment.id
             );
           } else {

@@ -44,7 +44,8 @@ export const finalizeSchedule = async (db, appId, userId, weeklySheetId) => {
         amount: Number(p.netPayable) || Number(p.amount) || 0,
         budgetLine: p.budgetItem || p.budgetLine,
         invoiceNo: p.invoiceNo,
-        description: p.description
+        description: p.description,
+        originalSheetRow: p.originalSheetRow // CRITICAL: Include row number for master log
       })),
       metadata: {
         weeklySheetId: weeklySheetId,

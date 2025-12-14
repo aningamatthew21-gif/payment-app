@@ -31,8 +31,8 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     // Subscribe to real-time updates
     console.log('[MasterLogDashboard] Setting up Master Log subscription for appId:', appId);
     const unsubscribeMasterLog = MasterLogService.subscribeToMasterLog(
-      db, 
-      appId, 
+      db,
+      appId,
       (entries) => {
         console.log('[MasterLogDashboard] Master Log subscription callback received entries:', entries.length);
         console.log('[MasterLogDashboard] First entry sample:', entries[0]);
@@ -41,8 +41,8 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     );
 
     const unsubscribeWHT = WHTReturnService.subscribeToWHTReturns(
-      db, 
-      appId, 
+      db,
+      appId,
       (entries) => setWhtEntries(entries)
     );
 
@@ -67,29 +67,29 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
 
     console.log('[MasterLogDashboard] loadInitialData called with:', { db: !!db, appId });
     setLoading(true);
-    
+
     try {
       // Test Master Log connection first
       console.log('[MasterLogDashboard] Testing Master Log connection...');
       const masterLogEntries = await MasterLogService.getMasterLogEntries(db, appId);
       console.log('[MasterLogDashboard] Initial Master Log entries loaded:', masterLogEntries.length);
-      
+
       if (masterLogEntries.length > 0) {
         console.log('[MasterLogDashboard] First entry sample:', masterLogEntries[0]);
       }
-      
+
       // Extract WHT data from existing master log
       console.log('[MasterLogDashboard] Extracting WHT data from master log...');
       const whtEntries = await WHTDataService.getWHTEntriesFromMasterLog(db, appId);
       setWhtEntries(whtEntries);
       console.log('[MasterLogDashboard] WHT entries extracted:', whtEntries.length);
-      
+
       // Generate WHT batch summaries from master log data
       console.log('[MasterLogDashboard] Generating WHT batch summaries...');
       const whtSummaries = await WHTDataService.getWHTBatchSummariesFromMasterLog(db, appId);
       setWhtBatchSummaries(whtSummaries);
       console.log('[MasterLogDashboard] WHT batch summaries generated:', whtSummaries.length);
-      
+
     } catch (error) {
       console.error('[MasterLogDashboard] Error loading initial data:', error);
       console.error('[MasterLogDashboard] Error details:', {
@@ -110,24 +110,24 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     if (!masterLogEntries || !Array.isArray(masterLogEntries)) {
       return [];
     }
-    
+
     return masterLogEntries.filter(entry => {
       if (!entry) return false;
-      
+
       // Date range filters
       if (filters.dateFrom && entry.finalizationDate < filters.dateFrom) return false;
       if (filters.dateTo && entry.finalizationDate > filters.dateTo) return false;
-      
+
       // Vendor filter (case-insensitive search)
       if (filters.vendor && !entry.vendorName?.toLowerCase().includes(filters.vendor.toLowerCase())) return false;
-      
+
       // Budget line filter (case-insensitive search)
       if (filters.budgetLine && !entry.budgetLine?.toLowerCase().includes(filters.budgetLine.toLowerCase())) return false;
-      
+
       // Amount range filters (FullNetPayable_Inv)
       if (filters.minAmount && Number(entry.fullNetPayable_Inv || 0) < Number(filters.minAmount)) return false;
       if (filters.maxAmount && Number(entry.fullNetPayable_Inv || 0) > Number(filters.maxAmount)) return false;
-      
+
       return true;
     });
   };
@@ -136,7 +136,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     if (!whtEntries || !Array.isArray(whtEntries)) {
       return [];
     }
-    
+
     return whtEntries.filter(entry => {
       if (!entry) return false;
       if (filters.status && entry.status !== filters.status) return false;
@@ -178,37 +178,37 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     setExporting(true);
     try {
       console.log(`[MasterLogDashboard] Starting ${format.toUpperCase()} export with ${data.length} entries`);
-      
-             // Prepare export options based on current filters
-       const exportOptions = {
-         status: filters.status || undefined,
-         dateFrom: filters.dateFrom || undefined,
-         dateTo: filters.dateTo || undefined,
-         vendor: filters.vendor || undefined,
-         budgetLine: filters.budgetLine || undefined,
-         minAmount: filters.minAmount || undefined,
-         maxAmount: filters.maxAmount || undefined,
-         // Enhanced filter options
-         currency: filters.currency || undefined,
-         whtType: filters.whtType || undefined,
-         minWHTRate: filters.minWHTRate || undefined,
-         maxWHTRate: filters.maxWHTRate || undefined,
-         isPartialPayment: filters.isPartialPayment || undefined,
-         minPreTax: filters.minPreTax || undefined,
-         maxPreTax: filters.maxPreTax || undefined,
-         minNetPayable: filters.minNetPayable || undefined,
-         maxNetPayable: filters.maxNetPayable || undefined,
-         minSubtotal: filters.minSubtotal || undefined,
-         maxSubtotal: filters.maxSubtotal || undefined,
-         minBudgetImpact: filters.minBudgetImpact || undefined,
-         maxBudgetImpact: filters.maxBudgetImpact || undefined
-       };
-      
-      // Export and download
-      await MasterLogExportService.exportAndDownload(db, appId, format, exportOptions);
-      
+
+      // Prepare export options based on current filters
+      const exportOptions = {
+        status: filters.status || undefined,
+        dateFrom: filters.dateFrom || undefined,
+        dateTo: filters.dateTo || undefined,
+        vendor: filters.vendor || undefined,
+        budgetLine: filters.budgetLine || undefined,
+        minAmount: filters.minAmount || undefined,
+        maxAmount: filters.maxAmount || undefined,
+        // Enhanced filter options
+        currency: filters.currency || undefined,
+        whtType: filters.whtType || undefined,
+        minWHTRate: filters.minWHTRate || undefined,
+        maxWHTRate: filters.maxWHTRate || undefined,
+        isPartialPayment: filters.isPartialPayment || undefined,
+        minPreTax: filters.minPreTax || undefined,
+        maxPreTax: filters.maxPreTax || undefined,
+        minNetPayable: filters.minNetPayable || undefined,
+        maxNetPayable: filters.maxNetPayable || undefined,
+        minSubtotal: filters.minSubtotal || undefined,
+        maxSubtotal: filters.maxSubtotal || undefined,
+        minBudgetImpact: filters.minBudgetImpact || undefined,
+        maxBudgetImpact: filters.maxBudgetImpact || undefined
+      };
+
+      // Export and download - FIXED: Parameters in correct order (db, appId, filters, format)
+      await MasterLogExportService.exportAndDownload(db, appId, exportOptions, format);
+
       console.log(`[MasterLogDashboard] ${format.toUpperCase()} export completed successfully`);
-      
+
     } catch (error) {
       console.error(`[MasterLogDashboard] Export failed:`, error);
       alert(`Export failed: ${error.message}`);
@@ -230,7 +230,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     setExporting(true);
     try {
       console.log(`[MasterLogDashboard] Starting WHT ${format.toUpperCase()} export with ${data.length} entries`);
-      
+
       // Prepare export options based on current filters
       const exportOptions = {
         status: filters.status || undefined,
@@ -238,12 +238,12 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
         vendor: filters.vendor || undefined,
         batchId: filters.batchId || undefined
       };
-      
+
       // Export and download using WHTExportService
       await WHTExportService.exportAndDownload(db, appId, format, exportOptions);
-      
+
       console.log(`[MasterLogDashboard] WHT ${format.toUpperCase()} export completed successfully`);
-      
+
     } catch (error) {
       console.error(`[MasterLogDashboard] WHT export failed:`, error);
       alert(`WHT export failed: ${error.message}`);
@@ -255,16 +255,16 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
   // DEBUGGING: Add test function to analyze master log data structure
   const debugMasterLogDataStructure = () => {
     console.log('=== MASTER LOG DATA STRUCTURE DEBUG ===');
-    
+
     if (!masterLogEntries || masterLogEntries.length === 0) {
       console.log('[DEBUG] No master log entries available');
       return;
     }
-    
+
     const sampleEntry = masterLogEntries[0];
     console.log('[DEBUG] Sample master log entry:', sampleEntry);
     console.log('[DEBUG] Sample entry keys:', Object.keys(sampleEntry));
-    
+
     // Check for required fields
     const requiredFields = [
       'logTimestamp', 'transactionID', 'finalizationDate', 'sourceWeeklySheet', 'originalSheetRow',
@@ -275,10 +275,10 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
       'moMoCharge_ThisTx', 'bankPaidFrom', 'paymentMode_Tx', 'userFinalized', 'manualStatusAtFinalization',
       'scheduleArchiveRef', 'fxRate', 'weeklySheetId', 'voucherId', 'batchId'
     ];
-    
+
     const missingFields = [];
     const availableFields = [];
-    
+
     requiredFields.forEach(field => {
       if (sampleEntry.hasOwnProperty(field)) {
         availableFields.push(field);
@@ -288,19 +288,19 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
         console.log(`[DEBUG] ✗ Field "${field}" missing`);
       }
     });
-    
+
     console.log('[DEBUG] Available fields:', availableFields.length);
     console.log('[DEBUG] Missing fields:', missingFields.length);
     console.log('[DEBUG] Missing field names:', missingFields);
-    
+
     // Check data types
     availableFields.forEach(field => {
       const value = sampleEntry[field];
       console.log(`[DEBUG] Field "${field}" type:`, typeof value, 'value:', value);
     });
-    
+
     console.log('=== END DEBUG ===');
-    
+
     return {
       availableFields,
       missingFields,
@@ -311,49 +311,49 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
   // DEBUGGING: Test function to verify Master Log connection and data retrieval
   const testMasterLogConnection = async () => {
     console.log('=== MASTER LOG CONNECTION TEST ===');
-    
+
     if (!db || !appId) {
       console.error('[TEST] Missing db or appId:', { db: !!db, appId });
       return;
     }
-    
+
     try {
       console.log('[TEST] Testing connection to appId:', appId);
-      
+
       // Test 1: Direct collection access
       console.log('[TEST] Test 1: Direct collection access');
       const { collection, getDocs, query, orderBy } = await import('firebase/firestore');
       const masterLogCollection = collection(db, `artifacts/${appId}/public/data/masterLog`);
       console.log('[TEST] Collection reference created:', !!masterLogCollection);
-      
+
       // Test 2: Get documents
       console.log('[TEST] Test 2: Getting documents');
       const q = query(masterLogCollection, orderBy('logTimestamp', 'desc'));
       const snapshot = await getDocs(q);
       console.log('[TEST] Documents retrieved:', snapshot.size);
-      
+
       if (snapshot.size > 0) {
         const firstDoc = snapshot.docs[0];
         console.log('[TEST] First document data:', firstDoc.data());
         console.log('[TEST] First document ID:', firstDoc.id);
       }
-      
+
       // Test 3: MasterLogService call
       console.log('[TEST] Test 3: MasterLogService.getMasterLogEntries');
       const entries = await MasterLogService.getMasterLogEntries(db, appId);
       console.log('[TEST] Service returned entries:', entries.length);
-      
+
       if (entries.length > 0) {
         console.log('[TEST] First service entry:', entries[0]);
       }
-      
+
       // Test 4: Check subscription status
       console.log('[TEST] Test 4: Current subscription state');
       console.log('[TEST] Current masterLogEntries state:', masterLogEntries.length);
       console.log('[TEST] Current filteredData:', getFilteredMasterLog().length);
-      
+
       console.log('[TEST] ✓ All connection tests completed successfully');
-      
+
     } catch (error) {
       console.error('[TEST] ✗ Connection test failed:', error);
       console.error('[TEST] Error details:', {
@@ -362,38 +362,38 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
         stack: error.stack
       });
     }
-    
+
     console.log('=== END CONNECTION TEST ===');
   };
 
   // DEBUGGING: Test function to verify table structure
   const debugTableStructure = () => {
     console.log('=== TABLE STRUCTURE DEBUG ===');
-    
+
     // Count table headers
     const tableHeaders = document.querySelectorAll('thead th');
     console.log('[DEBUG] Total table headers found:', tableHeaders.length);
-    
+
     // Log each header with its column letter
     tableHeaders.forEach((header, index) => {
       const columnLetter = String.fromCharCode(65 + index); // A, B, C, etc.
       const headerText = header.textContent?.trim() || 'No text';
       console.log(`[DEBUG] Column ${columnLetter} (${index + 1}): ${headerText}`);
     });
-    
+
     // Check if we have exactly 25 columns
     if (tableHeaders.length === 25) {
       console.log('[DEBUG] ✓ Table structure is correct: 25 columns found');
     } else {
       console.log(`[DEBUG] ✗ Table structure issue: Expected 25 columns, found ${tableHeaders.length}`);
     }
-    
+
     // Count data cells in first row (if exists)
     const firstDataRow = document.querySelector('tbody tr');
     if (firstDataRow) {
       const dataCells = firstDataRow.querySelectorAll('td');
       console.log(`[DEBUG] Data cells in first row: ${dataCells.length}`);
-      
+
       if (dataCells.length === 25) {
         console.log('[DEBUG] ✓ Data row structure is correct: 25 cells found');
       } else {
@@ -402,9 +402,9 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     } else {
       console.log('[DEBUG] No data rows found to check');
     }
-    
+
     console.log('=== END TABLE STRUCTURE DEBUG ===');
-    
+
     return {
       totalColumns: tableHeaders.length,
       isCorrect: tableHeaders.length === 25,
@@ -415,34 +415,34 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
   // DEBUGGING: Comprehensive test function for complete system
   const testCompleteSystem = () => {
     console.log('=== COMPLETE SYSTEM TEST ===');
-    
+
     // Test 1: Data Structure
     const dataStructureResult = debugMasterLogDataStructure();
     console.log('[TEST] Data Structure Test Result:', dataStructureResult);
-    
+
     // Test 2: Table Structure
     const tableStructureResult = debugTableStructure();
     console.log('[TEST] Table Structure Test Result:', tableStructureResult);
-    
+
     // Test 3: Data Mapping
     if (masterLogEntries && masterLogEntries.length > 0) {
       const sampleEntry = masterLogEntries[0];
       console.log('[TEST] Sample Entry Data Mapping:');
-      
+
       // Check if new fields are accessible
       const newFields = [
         'preTax_ThisTx', 'netPayable_ThisTx', 'subtotal_ThisTx', 'currency_Tx',
         'budgetImpactUSD_ThisTx', 'whtType_ThisTx', 'whtRate_ThisTx', 'whtAmount_ThisTx',
         'levyAmount_ThisTx', 'vatAmount_ThisTx', 'moMoCharge_ThisTx'
       ];
-      
+
       newFields.forEach(field => {
         const value = sampleEntry[field];
         const status = value !== undefined ? '✓' : '✗';
         console.log(`[TEST] ${status} Field "${field}":`, value);
       });
     }
-    
+
     // Test 4: Table Layout and Scrolling
     console.log('[TEST] Table Layout Test:');
     const tableContainer = document.querySelector('.overflow-x-auto');
@@ -454,7 +454,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
     } else {
       console.log('[TEST] ✗ Table container not found');
     }
-    
+
     // Test 5: Column Widths
     const tableHeaders = document.querySelectorAll('thead th');
     if (tableHeaders.length === 25) {
@@ -465,10 +465,10 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
         console.log(`[TEST] Column ${columnLetter}: "${headerText}" - Width: ${header.offsetWidth}px`);
       });
     }
-    
+
     console.log('[TEST] Complete System Test Finished');
     console.log('=== END COMPLETE SYSTEM TEST ===');
-    
+
     return {
       dataStructure: dataStructureResult,
       tableStructure: tableStructureResult,
@@ -478,18 +478,18 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
 
   const renderMasterLogTab = () => {
     const filteredData = getFilteredMasterLog();
-    
+
     // DEBUGGING: Log data structure on each render
     console.log('[DEBUG] renderMasterLogTab called with filteredData length:', filteredData.length);
     if (filteredData.length > 0) {
       console.log('[DEBUG] First filtered entry sample:', filteredData[0]);
     }
-    
-         // DEBUGGING: Log table structure progress
-     console.log('[DEBUG] Phase 4 Complete: Enhanced filtering logic implemented for all 25 columns');
-     console.log('[DEBUG] Columns A-Y: All headers, data cells, layout, and filtering completed');
-     console.log('[DEBUG] Next step: Update export functionality and final testing');
-    
+
+    // DEBUGGING: Log table structure progress
+    console.log('[DEBUG] Phase 4 Complete: Enhanced filtering logic implemented for all 25 columns');
+    console.log('[DEBUG] Columns A-Y: All headers, data cells, layout, and filtering completed');
+    console.log('[DEBUG] Next step: Update export functionality and final testing');
+
     return (
       <div className="space-y-6">
         {/* Simplified Filters */}
@@ -515,7 +515,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            
+
             {/* Vendor Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Vendor</label>
@@ -527,7 +527,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            
+
             {/* Budget Line Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Budget Line</label>
@@ -539,7 +539,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            
+
             {/* Amount Range Filter */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Min Amount</label>
@@ -562,7 +562,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
               />
             </div>
           </div>
-          
+
           {/* Filter Actions */}
           <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200">
             <div className="flex space-x-2">
@@ -575,7 +575,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                 <RefreshCw className="h-4 w-4" />
                 <span>Test Connection</span>
               </button>
-              
+
               <button
                 onClick={() => setFilters({
                   dateFrom: '',
@@ -596,10 +596,10 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                 <RefreshCw className="h-4 w-4" />
                 <span>Refresh</span>
               </button>
-              
 
-             </div>
-            
+
+            </div>
+
             {/* Export Options */}
             <div className="flex space-x-2">
               <select
@@ -622,29 +622,29 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
           </div>
         </div>
 
-                 {/* Excel-like Table */}
-         <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-           {/* Table Info Header */}
-           <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-             <div className="flex items-center justify-between">
-               <div className="flex items-center space-x-4">
-                 <span className="text-sm font-medium text-gray-700">
-                   Master Log Entries: <span className="text-blue-600 font-semibold">{filteredData.length}</span>
-                 </span>
-                 <span className="text-sm text-gray-500">
-                   Columns: <span className="text-green-600 font-semibold">A-Y (25 total)</span>
-                 </span>
-               </div>
-               <div className="text-xs text-gray-500">
-                 Scroll horizontally to view all columns
-               </div>
-             </div>
-           </div>
-           
-                      <div className="overflow-x-auto">
-             <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: '2000px' }}>
-               {/* Excel-style Header Row */}
-               <thead className="bg-blue-700 sticky top-0 z-10">
+        {/* Excel-like Table */}
+        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+          {/* Table Info Header */}
+          <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-4">
+                <span className="text-sm font-medium text-gray-700">
+                  Master Log Entries: <span className="text-blue-600 font-semibold">{filteredData.length}</span>
+                </span>
+                <span className="text-sm text-gray-500">
+                  Columns: <span className="text-green-600 font-semibold">A-Y (25 total)</span>
+                </span>
+              </div>
+              <div className="text-xs text-gray-500">
+                Scroll horizontally to view all columns
+              </div>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200" style={{ minWidth: '2000px' }}>
+              {/* Excel-style Header Row */}
+              <thead className="bg-blue-700 sticky top-0 z-10">
                 <tr>
                   {/* Column A: LogTimestamp */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
@@ -656,7 +656,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column B: TransactionID */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -667,7 +667,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column C: FinalizationDate */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -678,7 +678,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column D: SourceWeeklySheet */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -689,7 +689,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column E: OriginalSheetRow */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -700,7 +700,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column F: InvoiceNo */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -711,7 +711,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column G: OriginalInvoiceReference */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -722,7 +722,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column H: VendorName */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -733,7 +733,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column I: Description */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -744,7 +744,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column J: BudgetLine */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -755,7 +755,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column K: IsPartialPayment */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -766,7 +766,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column L: PaymentPercentage */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -777,7 +777,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column M: OriginalFullPreTax_Inv */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -788,7 +788,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column N: FullNetPayable_Inv */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -799,7 +799,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column O: PreTax_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -810,7 +810,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column P: NetPayable_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -821,7 +821,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column Q: Subtotal_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -832,7 +832,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column R: Currency_Tx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -843,7 +843,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column S: BudgetImpactUSD_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -854,7 +854,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column T: WHT_Type_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -865,7 +865,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column U: WHT_Rate_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -876,7 +876,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column V: WHT_Amount_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -887,7 +887,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column W: Levy_Amount_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -898,7 +898,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column X: VAT_Amount_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -909,7 +909,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       </svg>
                     </div>
                   </th>
-                  
+
                   {/* Column Y: MoMoCharge_ThisTx */}
                   <th className="px-4 py-3 text-left text-xs font-bold text-white uppercase tracking-wider cursor-pointer hover:bg-blue-600 transition-colors">
                     <div className="flex items-center space-x-1">
@@ -922,7 +922,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                   </th>
                 </tr>
               </thead>
-              
+
               {/* Excel-style Data Rows */}
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredData.length === 0 ? (
@@ -937,152 +937,150 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                   </tr>
                 ) : (
                   filteredData.map((entry, index) => (
-                    <tr 
-                      key={entry.id || index} 
-                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${
-                        index % 2 === 0 ? 'bg-white' : 'bg-blue-50'
-                      }`}
+                    <tr
+                      key={entry.id || index}
+                      className={`hover:bg-gray-50 cursor-pointer transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-blue-50'
+                        }`}
                       onClick={() => handleViewDetails(entry, 'masterLog')}
                     >
                       {/* Column A: LogTimestamp */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
                         {entry.logTimestamp ? new Date(entry.logTimestamp.toDate ? entry.logTimestamp.toDate() : entry.logTimestamp).toLocaleString() : 'N/A'}
                       </td>
-                      
+
                       {/* Column B: TransactionID */}
                       <td className="px-4 py-3 text-sm font-mono text-blue-600 whitespace-nowrap border border-gray-200">
                         {entry.transactionID || 'N/A'}
                       </td>
-                      
+
                       {/* Column C: FinalizationDate */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
                         {entry.finalizationDate || 'N/A'}
                       </td>
-                      
+
                       {/* Column D: SourceWeeklySheet */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
                         {entry.sourceWeeklySheet || 'N/A'}
                       </td>
-                      
+
                       {/* Column E: OriginalSheetRow */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-center">
                         {entry.originalSheetRow || 'N/A'}
                       </td>
-                      
+
                       {/* Column F: InvoiceNo */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
                         {entry.invoiceNo || 'N/A'}
                       </td>
-                      
+
                       {/* Column G: OriginalInvoiceReference */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
                         {entry.originalInvoiceReference || 'N/A'}
                       </td>
-                      
+
                       {/* Column H: VendorName */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
                         {entry.vendorName || 'N/A'}
                       </td>
-                      
+
                       {/* Column I: Description */}
                       <td className="px-4 py-3 text-sm text-gray-900 border border-gray-200 max-w-xs">
                         <div className="truncate" title={entry.description || 'N/A'}>
                           {entry.description || 'N/A'}
                         </div>
                       </td>
-                      
+
                       {/* Column J: BudgetLine */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
                         {entry.budgetLine || 'N/A'}
                       </td>
-                      
+
                       {/* Column K: IsPartialPayment */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-center">
-                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          entry.isPartialPayment 
-                            ? 'bg-yellow-100 text-yellow-800' 
+                        <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${entry.isPartialPayment
+                            ? 'bg-yellow-100 text-yellow-800'
                             : 'bg-green-100 text-green-800'
-                        }`}>
+                          }`}>
                           {entry.isPartialPayment ? 'Yes' : 'No'}
                         </span>
                       </td>
-                      
+
                       {/* Column L: PaymentPercentage */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-center">
                         {entry.paymentPercentage ? `${entry.paymentPercentage}%` : '100%'}
                       </td>
-                      
+
                       {/* Column M: OriginalFullPreTax_Inv */}
                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
                         {entry.originalFullPreTax_Inv ? `$${Number(entry.originalFullPreTax_Inv).toFixed(2)}` : 'N/A'}
                       </td>
-                      
-                                             {/* Column N: FullNetPayable_Inv */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.fullNetPayable_Inv ? `$${Number(entry.fullNetPayable_Inv).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column O: PreTax_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.preTax_ThisTx ? `$${Number(entry.preTax_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column P: NetPayable_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.netPayable_ThisTx ? `$${Number(entry.netPayable_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column Q: Subtotal_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.subtotal_ThisTx ? `$${Number(entry.subtotal_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column R: Currency_Tx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-center">
-                         {entry.currency_Tx || 'GHS'}
-                       </td>
-                       
-                       {/* Column S: BudgetImpactUSD_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.budgetImpactUSD_ThisTx ? `$${Number(entry.budgetImpactUSD_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column T: WHT_Type_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
-                         {entry.whtType_ThisTx || 'STANDARD'}
-                       </td>
-                       
-                       {/* Column U: WHT_Rate_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-center">
-                         {entry.whtRate_ThisTx ? `${(Number(entry.whtRate_ThisTx) * 100).toFixed(1)}%` : 'N/A'}
-                       </td>
-                       
-                       {/* Column V: WHT_Amount_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.whtAmount_ThisTx ? `₵${Number(entry.whtAmount_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column W: Levy_Amount_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.levyAmount_ThisTx ? `₵${Number(entry.levyAmount_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column X: VAT_Amount_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.vatAmount_ThisTx ? `₵${Number(entry.vatAmount_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                       
-                       {/* Column Y: MoMoCharge_ThisTx */}
-                       <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
-                         {entry.moMoCharge_ThisTx ? `₵${Number(entry.moMoCharge_ThisTx).toFixed(2)}` : 'N/A'}
-                       </td>
-                     </tr>
-                   ))
-                 )}
-               </tbody>
+
+                      {/* Column N: FullNetPayable_Inv */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.fullNetPayable_Inv ? `$${Number(entry.fullNetPayable_Inv).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column O: PreTax_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.preTax_ThisTx ? `$${Number(entry.preTax_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column P: NetPayable_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.netPayable_ThisTx ? `$${Number(entry.netPayable_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column Q: Subtotal_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.subtotal_ThisTx ? `$${Number(entry.subtotal_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column R: Currency_Tx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-center">
+                        {entry.currency_Tx || 'GHS'}
+                      </td>
+
+                      {/* Column S: BudgetImpactUSD_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.budgetImpactUSD_ThisTx ? `$${Number(entry.budgetImpactUSD_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column T: WHT_Type_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200">
+                        {entry.whtType_ThisTx || 'STANDARD'}
+                      </td>
+
+                      {/* Column U: WHT_Rate_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-center">
+                        {entry.whtRate_ThisTx ? `${(Number(entry.whtRate_ThisTx) * 100).toFixed(1)}%` : 'N/A'}
+                      </td>
+
+                      {/* Column V: WHT_Amount_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.whtAmount_ThisTx ? `₵${Number(entry.whtAmount_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column W: Levy_Amount_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.levyAmount_ThisTx ? `₵${Number(entry.levyAmount_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column X: VAT_Amount_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.vatAmount_ThisTx ? `₵${Number(entry.vatAmount_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+
+                      {/* Column Y: MoMoCharge_ThisTx */}
+                      <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap border border-gray-200 text-right">
+                        {entry.moMoCharge_ThisTx ? `₵${Number(entry.moMoCharge_ThisTx).toFixed(2)}` : 'N/A'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
             </table>
           </div>
-          
+
           {/* Excel-style Summary Row */}
           {filteredData.length > 0 && (
             <div className="bg-gray-100 px-4 py-3 border-t border-gray-200">
@@ -1115,7 +1113,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
             <FileText className="h-8 w-8 text-blue-500" />
           </div>
         </div>
-        
+
         <div className="bg-white p-4 rounded-lg shadow border">
           <div className="flex items-center justify-between">
             <div>
@@ -1127,7 +1125,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
             <TrendingUp className="h-8 w-8 text-green-500" />
           </div>
         </div>
-        
+
         <div className="bg-white p-4 rounded-lg shadow border">
           <div className="flex items-center justify-between">
             <div>
@@ -1139,7 +1137,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
             <CreditCard className="h-8 w-8 text-yellow-500" />
           </div>
         </div>
-        
+
         <div className="bg-white p-4 rounded-lg shadow border">
           <div className="flex items-center justify-between">
             <div>
@@ -1165,7 +1163,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
               <Filter className="h-4 w-4 text-gray-500" />
               <span className="text-sm font-medium text-gray-700">Filters:</span>
             </div>
-            
+
             <select
               value={filters.status}
               onChange={(e) => handleFilterChange('status', e.target.value)}
@@ -1176,32 +1174,32 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
               <option value="submitted">Submitted</option>
               <option value="processed">Processed</option>
             </select>
-            
-                         <select
-               value={filters.year}
-               onChange={(e) => handleFilterChange('year', parseInt(e.target.value) || new Date().getFullYear())}
-               className="border border-gray-300 rounded-md px-3 py-1 text-sm"
-             >
-               {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => (
-                 <option key={year} value={year}>{year}</option>
-               ))}
-             </select>
-            
+
+            <select
+              value={filters.year}
+              onChange={(e) => handleFilterChange('year', parseInt(e.target.value) || new Date().getFullYear())}
+              className="border border-gray-300 rounded-md px-3 py-1 text-sm"
+            >
+              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+
             <select
               value={filters.vendor}
               onChange={(e) => handleFilterChange('vendor', e.target.value)}
               className="border border-gray-300 rounded-md px-3 py-1 text-sm"
             >
               <option value="">All Vendors</option>
-                             {[...new Set(whtEntries
-                 .filter(entry => entry && entry.vendor)
-                 .map(entry => entry.vendor)
-               )].map(vendor => (
-                 <option key={vendor || 'unknown'} value={vendor || ''}>{vendor || 'Unknown'}</option>
-               ))}
+              {[...new Set(whtEntries
+                .filter(entry => entry && entry.vendor)
+                .map(entry => entry.vendor)
+              )].map(vendor => (
+                <option key={vendor || 'unknown'} value={vendor || ''}>{vendor || 'Unknown'}</option>
+              ))}
             </select>
           </div>
-          
+
           {/* Export Controls */}
           <div className="flex items-center space-x-3">
             <button
@@ -1212,37 +1210,35 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
               <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               <span>Refresh Data</span>
             </button>
-            
+
             <span className="text-sm font-medium text-gray-700">Export:</span>
-            
+
             <button
               onClick={() => handleWHTExport(getFilteredWHT(), 'csv')}
               disabled={exporting || getFilteredWHT().length === 0}
-              className={`px-4 py-2 text-sm font-medium rounded-md flex items-center space-x-2 ${
-                exporting || getFilteredWHT().length === 0
+              className={`px-4 py-2 text-sm font-medium rounded-md flex items-center space-x-2 ${exporting || getFilteredWHT().length === 0
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-green-600 text-white hover:bg-green-700'
-              }`}
+                }`}
               title="Export WHT data to CSV"
             >
               <Download className="h-4 w-4" />
               <span>CSV</span>
             </button>
-            
+
             <button
               onClick={() => handleWHTExport(getFilteredWHT(), 'excel')}
               disabled={exporting || getFilteredWHT().length === 0}
-              className={`px-4 py-2 text-sm font-medium rounded-md flex items-center space-x-2 ${
-                exporting || getFilteredWHT().length === 0
+              className={`px-4 py-2 text-sm font-medium rounded-md flex items-center space-x-2 ${exporting || getFilteredWHT().length === 0
                   ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700'
-              }`}
+                }`}
               title="Export WHT data to Excel"
             >
               <Download className="h-4 w-4" />
               <span>Excel</span>
             </button>
-            
+
             {exporting && (
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <RefreshCw className="h-4 w-4 animate-spin" />
@@ -1258,7 +1254,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
         <div className="px-6 py-4 border-b border-gray-200">
           <h3 className="text-lg font-semibold text-gray-900">WHT Return Entries</h3>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -1306,11 +1302,10 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
                       {entry.taxPeriod || 'N/A'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                        entry.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                        entry.status === 'submitted' ? 'bg-blue-100 text-blue-800' :
-                        'bg-green-100 text-green-800'
-                      }`}>
+                      <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${entry.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          entry.status === 'submitted' ? 'bg-blue-100 text-blue-800' :
+                            'bg-green-100 text-green-800'
+                        }`}>
                         {entry.status || 'unknown'}
                       </span>
                     </td>
@@ -1344,7 +1339,7 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
               <h2 className="text-xl font-bold">
                 {selectedEntry.type === 'masterLog' ? 'Master Log Details' : 'WHT Entry Details'}
               </h2>
-              <button 
+              <button
                 onClick={() => setShowDetails(false)}
                 className="text-gray-400 hover:text-gray-600"
               >
@@ -1493,21 +1488,19 @@ const MasterLogDashboard = ({ db, appId, userId, onNavigate }) => {
             <nav className="-mb-px flex space-x-8 px-6">
               <button
                 onClick={() => setActiveTab('masterLog')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'masterLog'
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'masterLog'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                  }`}
               >
                 Master Log
               </button>
               <button
                 onClick={() => setActiveTab('wht')}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'wht'
+                className={`py-4 px-1 border-b-2 font-medium text-sm ${activeTab === 'wht'
                     ? 'border-blue-500 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
+                  }`}
               >
                 WHT Returns
               </button>

@@ -10,6 +10,9 @@ const BankCard = ({ bank, onClick }) => {
         }).format(amount);
     };
 
+    // Safe defaults for stats (in case bank was just created)
+    const stats = bank.stats || { monthlyInflow: 0, monthlyOutflow: 0 };
+
     return (
         <div
             onClick={() => onClick(bank)}
@@ -26,20 +29,20 @@ const BankCard = ({ bank, onClick }) => {
 
             <h3 className="text-lg font-semibold text-slate-800 mb-1">{bank.name}</h3>
             <p className="text-2xl font-bold text-slate-900">
-                {formatCurrency(bank.balance, bank.currency)}
+                {formatCurrency(bank.balance || 0, bank.currency)}
             </p>
 
             <div className="mt-4 pt-4 border-t border-slate-100 flex justify-between text-sm">
                 <div>
                     <span className="block text-slate-400 text-xs">Inflow (Mo)</span>
                     <span className="text-green-600 font-medium">
-                        +{formatCurrency(bank.stats.monthlyInflow, bank.currency)}
+                        +{formatCurrency(stats.monthlyInflow, bank.currency)}
                     </span>
                 </div>
                 <div className="text-right">
                     <span className="block text-slate-400 text-xs">Outflow (Mo)</span>
                     <span className="text-red-500 font-medium">
-                        -{formatCurrency(bank.stats.monthlyOutflow, bank.currency)}
+                        -{formatCurrency(stats.monthlyOutflow, bank.currency)}
                     </span>
                 </div>
             </div>
@@ -48,3 +51,4 @@ const BankCard = ({ bank, onClick }) => {
 };
 
 export default BankCard;
+

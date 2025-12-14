@@ -12,6 +12,7 @@ import { safeToFixed } from '../utils/formatters';
 import { useSettings } from '../contexts/SettingsContext';
 import { calculateTotalTaxes } from '../services/FinancialEngine';
 import { VendorService } from '../services/VendorService';
+import { BankService } from '../services/BankService';
 
 const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout, sheetName }) => {
     console.log('=== WeeklyPaymentsDetail RENDER ===');
@@ -36,6 +37,14 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
         }
         return null;
     }, [db, appId]);
+
+    // Calculate row numbers for payments (stable index based on full list)
+    const paymentsWithRow = useMemo(() => {
+        return payments.map((p, index) => ({
+            ...p,
+            originalSheetRow: index + 1
+        }));
+    }, [payments]);
 
     // Form state for adding/editing
     const [formData, setFormData] = useState({
@@ -220,6 +229,30 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 }
             } catch (vendorError) {
                 console.warn('Error loading vendors from Vendor Management, using validation collection:', vendorError);
+            }
+
+            // BANK MANAGEMENT INTEGRATION: Load banks from BankService (single source of truth)
+            try {
+                console.log('Loading banks from Bank Management for WeeklyPaymentsDetail...');
+                const managedBanks = await BankService.getAllBanks(db, appId);
+
+                if (managedBanks && managedBanks.length > 0) {
+                    console.log(`Found ${managedBanks.length} banks from Bank Management`);
+
+                    // Replace validation collection banks with Bank Management banks
+                    data.banks = managedBanks.map(b => ({
+                        id: b.id,
+                        value: b.name,
+                        description: `${b.accountNumber} - ${b.currency}`,
+                        isActive: b.status !== 'inactive'
+                    }));
+
+                    console.log('Banks loaded from Bank Management:', data.banks.length);
+                } else {
+                    console.log('No banks found in Bank Management, existing validation banks will be used');
+                }
+            } catch (bankError) {
+                console.warn('Error loading banks from Bank Management, using validation collection:', bankError);
             }
 
             console.log('Enhanced validation data loaded for WeeklyPaymentsDetail:', data);
@@ -954,6 +987,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                 <thead className="bg-gray-200">
                                     <tr>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                                        <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Payment Mode</th>
                                         <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Invoice #</th>
@@ -978,8 +1012,10 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                 </thead>
                                 <tbody className="bg-white divide-y divide-gray-200">
                                     {filteredPayments.map((payment, index) => {
+                                        // Calculate the original index in the full list (1-based)
+                                        const originalIndex = payments.findIndex(p => p.id === payment.id) + 1;
                                         return (
-                                            <tr key={index} className={`hover:bg-gray-50 ${getPaymentStatus(payment) === 'paid' ? 'bg-green-50' : getPaymentStatus(payment) === 'partial' ? 'bg-yellow-50' : ''}`}>
+                                            <tr key={payment.id || index} className={`hover:bg-gray-50 ${getPaymentStatus(payment) === 'paid' ? 'bg-green-50' : getPaymentStatus(payment) === 'partial' ? 'bg-yellow-50' : ''}`}>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                                                     <div className="flex space-x-2">
                                                         <button
@@ -997,6 +1033,10 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                                             <Trash2 size={16} />
                                                         </button>
                                                     </div>
+                                                </td>
+                                                {/* Show the original row number */}
+                                                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-500">
+                                                    {originalIndex}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.date}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap text-sm">{payment.paymentMode}</td>
@@ -1089,6 +1129,8 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                                 userId={userId}
                                 weeklySheetId={sheetName}
                                 onClose={() => setShowPaymentStaging(false)}
+                                // Pass payments with index as originalSheetRow
+                                payments={paymentsWithRow}
                             />
                         </div>
                     </div>
