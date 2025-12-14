@@ -167,9 +167,10 @@ export const DocumentGenerationService = {
             startY: 115,
             body: [
                 ['Beneficiary Name', payment.vendor],
-                ['Account Number', payment.accountNumber || 'N/A'],
-                ['Bank', payment.bank || 'N/A'],
-                ['Branch', payment.branch || 'N/A'],
+                // ✅ FIXED: Read vendor-specific fields for beneficiary details
+                ['Account Number', payment.vendorAccountNumber || payment.accountNumber || 'N/A'],
+                ['Bank', payment.vendorBank || payment.bankName || 'N/A'],
+                ['Branch', payment.vendorBranch || payment.branch || 'N/A'],
                 ['Description', payment.description]
             ],
             theme: 'grid',
@@ -332,9 +333,10 @@ export const DocumentGenerationService = {
             startY: 115,
             body: [
                 ['Beneficiary Name', payment.vendor || 'N/A'],
-                ['Account Number', payment.accountNumber || payment.vendorAccountNumber || 'N/A'],
-                ['Bank', payment.bank || 'N/A'],
-                ['Branch', payment.branch || payment.vendorBranch || 'N/A'],
+                // ✅ FIXED: Read vendor-specific fields for beneficiary details  
+                ['Account Number', payment.vendorAccountNumber || payment.accountNumber || 'N/A'],
+                ['Bank', payment.vendorBank || payment.bankName || 'N/A'],
+                ['Branch', payment.vendorBranch || payment.branch || 'N/A'],
                 ['Description', payment.description || 'N/A'],
                 ['Budget Line', budgetLineName]
             ],

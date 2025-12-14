@@ -449,15 +449,18 @@ const PaymentGenerator = ({
       const selectedVendor = validationData.vendors.find(v => v.value === vendor);
       if (selectedVendor && selectedVendor.fullObject && selectedVendor.fullObject.banking) {
         const banking = selectedVendor.fullObject.banking;
-        // Auto-populate bank details if available
-        // We might want to store this in a separate field or append to description if needed
-        // For now, let's log it to confirm it works
+        // Log vendor banking details for confirmation
         console.log('Selected Vendor Banking Details:', banking);
 
-        // If you want to auto-fill the Bank field in the form:
-        if (banking.bankName) {
-          dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'bank', value: banking.bankName } });
-        }
+        // ❌ CRITICAL FIX: DO NOT auto-fill the 'bank' field with vendor's bank
+        // The 'bank' field represents the COMPANY'S SOURCE BANK (where to deduct from)
+        // Vendor's bank details are stored separately in the payment object as vendorBank, vendorAccountNumber, etc.
+        // and used only for PDF generation (beneficiary details)
+
+        // REMOVED: The line below was causing the bank variable conflict
+        // if (banking.bankName) {
+        //   dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'bank', value: banking.bankName } });
+        // }
       }
     }
   }, [vendor, validationData.vendors, dispatch]);
@@ -626,9 +629,17 @@ const PaymentGenerator = ({
       preparedBy,
       paymentPriority,
       approvalNotes,
-      bank,
+
+      // ✅ CRITICAL FIX: Strict Bank Field Separation
+      bank, // Company's SOURCE bank (where money is deducted FROM)
+
+      // ✅ NEW: Flat vendor banking fields for PDF generation (beneficiary details)
+      vendorBank: validationData.vendors.find(v => v.value === vendor)?.fullObject?.banking?.bankName || '',
+      vendorAccountNumber: validationData.vendors.find(v => v.value === vendor)?.fullObject?.banking?.accountNumber || '',
+      vendorBranch: validationData.vendors.find(v => v.value === vendor)?.fullObject?.banking?.branchCode || '',
+
       supportDocuments: uploadedDocs,
-      // Attach Vendor Banking Details for Document Generation
+      // Keep full object as backup for any additional fields needed
       vendorBanking: validationData.vendors.find(v => v.value === vendor)?.fullObject?.banking || null
     };
 
