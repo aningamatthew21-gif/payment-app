@@ -1,54 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { getAuth, signInAnonymously, signOut } from 'firebase/auth';
+import ParticleBackground from '../components/ParticleBackground';
 
 const LoginPage = ({ onLogin }) => {
     const [isSigningIn, setIsSigningIn] = useState(false);
-    const [currentSlide, setCurrentSlide] = useState(0);
-
-    // Slideshow images - update these paths to match your actual images
-    const slideshowImages = [
-        '/src/assets/login-slideshow/slide1.png',
-        '/src/assets/login-slideshow/slide2.png',
-        '/src/assets/login-slideshow/slide3.png',
-        '/src/assets/login-slideshow/slide4.png',
-        '/src/assets/login-slideshow/slide5.png'
-    ];
-
-    // Fallback gradient if no images are available
-    const fallbackGradients = [
-        'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-        'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-        'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-        'linear-gradient(135deg, #fa709a 0%, #fee140 100%)'
-    ];
-
-    // Slideshow effect
-    useEffect(() => {
-        console.log('[Slideshow] Initializing slideshow with', slideshowImages.length, 'images');
-
-        // Test if images are accessible (only log errors)
-        slideshowImages.forEach((image, index) => {
-            const img = new Image();
-            img.onload = () => {
-                // Only log on first load
-                if (index === 0) {
-                    console.log(`[Slideshow] Images loaded successfully`);
-                }
-            };
-            img.onerror = () => console.log(`[Slideshow] Test: Image ${index + 1} is NOT accessible: ${image}`);
-            img.src = image;
-        });
-
-        const interval = setInterval(() => {
-            setCurrentSlide((prev) => {
-                const next = (prev + 1) % slideshowImages.length;
-                return next;
-            });
-        }, 2000); // Change slide every 2 seconds
-
-        return () => clearInterval(interval);
-    }, [slideshowImages.length]);
 
     const handleSignIn = async () => {
         setIsSigningIn(true);
@@ -77,40 +32,9 @@ const LoginPage = ({ onLogin }) => {
 
     return (
         <div className="relative flex items-center justify-center min-h-screen overflow-hidden">
-            {/* Slideshow Background */}
+            {/* Particle Swarm Background */}
             <div className="absolute inset-0 z-0">
-                {/* Force show slide2 as background */}
-                <div className="absolute inset-0 z-1">
-                    <img
-                        src={slideshowImages[1]}
-                        alt="Background"
-                        className="absolute inset-0 w-full h-full object-cover"
-                    />
-                </div>
-
-                {slideshowImages.map((image, index) => (
-                    <div
-                        key={index}
-                        className="absolute inset-0 transition-opacity duration-1000 ease-in-out"
-                        style={{
-                            opacity: index === currentSlide ? 1 : 0,
-                            zIndex: index === currentSlide ? 2 : 0,
-                            pointerEvents: index === currentSlide ? 'auto' : 'none'
-                        }}
-                    >
-                        <img
-                            src={image}
-                            alt={`Slide ${index + 1}`}
-                            className="w-full h-full object-cover"
-                            onError={(e) => {
-                                e.target.style.display = 'none';
-                                e.target.parentElement.style.background = fallbackGradients[index];
-                            }}
-                        />
-                        {/* Overlay for better text readability */}
-                        <div className="absolute inset-0 bg-black bg-opacity-40"></div>
-                    </div>
-                ))}
+                <ParticleBackground />
             </div>
 
             {/* Login Card */}
