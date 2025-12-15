@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { collection, getDocs } from 'firebase/firestore';
-import { Settings, LogOut, CreditCard, LayoutDashboard, FileSpreadsheet, FileText, Landmark, Users, BarChart2 } from 'lucide-react';
+import { Settings, CreditCard, LayoutDashboard, FileSpreadsheet, FileText, Landmark, Users, BarChart2 } from 'lucide-react';
 import Layout from '../components/Layout/Layout';
 import StrategicReportingHub from '../components/StrategicReportingHub';
 import TestSettingsPanel from '../components/TestSettingsPanel';
-import { safeToFixed } from '../utils/formatters';
+import ActionCard from '../components/dashboard/ActionCard';
+import MetricCard from '../components/dashboard/MetricCard';
+import InteractiveAnalytics from '../components/dashboard/InteractiveAnalytics';
 
 const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTestSettings, setShowTestSettings }) => {
     const [budgetSummary, setBudgetSummary] = useState({
@@ -30,15 +32,10 @@ const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTe
                     const budgetLine = doc.data();
 
                     // 1. Calculate Total Allocated (Budget)
-                    // Sum of absolute values of monthlyValues array
                     const allocated = budgetLine.monthlyValues?.reduce((sum, val) => sum + Math.abs(val || 0), 0) || 0;
 
                     // 2. Calculate Total Spent
-                    // Use existing tracking fields, similar to BudgetManagementPage logic
                     const spentAmount = Math.abs(budgetLine.totalSpent || budgetLine.totalSpendToDate || 0);
-
-                    // 3. Calculate Available
-                    const remaining = allocated - spentAmount;
 
                     total += allocated;
                     spent += spentAmount;
@@ -59,7 +56,7 @@ const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTe
 
     const headerActions = (
         <button
-            className="flex items-center space-x-2 px-3 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+            className="flex items-center space-x-2 px-3 py-2 bg-slate-600 text-white rounded-md hover:bg-slate-700 transition-colors"
             onClick={() => setShowTestSettings(true)}
             title="Test & Debug Settings"
         >
@@ -69,101 +66,134 @@ const DashboardPage = ({ onNavigate, onBack, onLogout, userId, db, appId, showTe
 
     return (
         <Layout
-            title="Dashboard"
+            title="Command Center"
             userId={userId}
             onLogout={onLogout}
             headerActions={headerActions}
         >
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <div className="md:col-span-1 bg-white p-6 rounded-xl shadow-md flex flex-col justify-center items-center space-y-4">
-                    <button
-                        onClick={() => onNavigate('paymentGenerator')}
-                        className="w-full p-4 bg-blue-500 text-white font-semibold rounded-md text-lg hover:bg-blue-600 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <CreditCard size={24} />
-                        <span>Payment Generator</span>
-                    </button>
-                    <button
-                        onClick={() => onNavigate('weeklyPayments')}
-                        className="w-full p-4 bg-purple-500 text-white font-semibold rounded-md text-lg hover:bg-purple-600 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <LayoutDashboard size={24} />
-                        <span>Weekly Payments</span>
-                    </button>
-                    <button
-                        onClick={() => onNavigate('excelDemo')}
-                        className="w-full p-4 bg-green-500 text-white font-semibold rounded-md text-lg hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <FileSpreadsheet size={24} />
-                        <span>Excel Demo</span>
-                    </button>
+            <div className="max-w-7xl mx-auto space-y-8">
+
+                {/* TOP METRICS ROW */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <MetricCard
+                        label="Total Allocated Budget"
+                        value={budgetSummary.totalBudget}
+                        type="total"
+                    />
+                    <MetricCard
+                        label="Total Expenditure (YTD)"
+                        value={budgetSummary.spentBudget}
+                        type="spent"
+                    />
+                    <MetricCard
+                        label="Available Funds"
+                        value={budgetSummary.availableBudget}
+                        type="available"
+                    />
                 </div>
 
-                <div className="md:col-span-1 lg:col-span-2 bg-white p-6 rounded-xl shadow-md">
-                    <h2 className="text-xl font-bold mb-4">Financial Overview Dashboard</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
-                            <h3 className="text-sm font-medium text-blue-800">Total Budget</h3>
-                            <p className="text-2xl font-bold text-blue-900">${safeToFixed(budgetSummary.totalBudget)}</p>
-                            <p className="text-xs text-blue-600">Across all budget lines</p>
+                {/* MAIN CONTENT GRID */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+                    {/* LEFT: OPERATIONS CENTER (2/3 width) */}
+                    <div className="lg:col-span-2 space-y-6">
+                        <div className="flex items-center gap-2 mb-4">
+                            <LayoutDashboard size={20} className="text-slate-400" />
+                            <h2 className="text-lg font-bold text-slate-800">Operations Center</h2>
                         </div>
-                        <div className="bg-green-50 p-4 rounded-lg border border-green-200">
-                            <h3 className="text-sm font-medium text-green-800">Available</h3>
-                            <p className="text-2xl font-bold text-green-900">${safeToFixed(budgetSummary.availableBudget)}</p>
-                            <p className="text-xs text-green-600">Remaining budget</p>
-                        </div>
-                        <div className="bg-orange-50 p-4 rounded-lg border border-orange-200">
-                            <h3 className="text-sm font-medium text-orange-800">Spent</h3>
-                            <p className="text-2xl font-bold text-orange-900">${safeToFixed(budgetSummary.spentBudget)}</p>
-                            <p className="text-xs text-orange-600">Total expenditures</p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Primary Action - Royal Blue */}
+                            <ActionCard
+                                primary
+                                icon={CreditCard}
+                                title="Payment Generator"
+                                description="Create vouchers and instructions"
+                                onClick={() => onNavigate('paymentGenerator')}
+                            />
+
+                            {/* Secondary Actions - Clean White */}
+                            <ActionCard
+                                icon={FileText}
+                                title="Master Log & WHT"
+                                description="Transaction log and tax filing"
+                                onClick={() => onNavigate('masterLogDashboard')}
+                            />
+
+                            <ActionCard
+                                icon={LayoutDashboard}
+                                title="Weekly Payments"
+                                description="Manage payment batches"
+                                onClick={() => onNavigate('weeklyPayments')}
+                            />
+
+                            <ActionCard
+                                icon={FileSpreadsheet}
+                                title="Excel Demo"
+                                description="Import and export tools"
+                                onClick={() => onNavigate('excelDemo')}
+                            />
+
+                            <ActionCard
+                                icon={Settings}
+                                title="Budget Manager"
+                                description="Allocations and tracking"
+                                onClick={() => onNavigate('budgetManagement')}
+                            />
+
+                            <ActionCard
+                                icon={Landmark}
+                                title="Bank Manager"
+                                description="Monitor balances and flows"
+                                onClick={() => onNavigate('bankManagement')}
+                            />
+
+                            <ActionCard
+                                icon={Users}
+                                title="Vendor Database"
+                                description="Manage beneficiaries"
+                                onClick={() => onNavigate('vendorManagement')}
+                            />
+
+                            <ActionCard
+                                icon={BarChart2}
+                                title="Strategic Reports"
+                                description="Financial analytics & insights"
+                                onClick={() => setShowStrategicReports(true)}
+                            />
                         </div>
                     </div>
-                    <div className="w-full h-32 bg-gray-200 rounded-lg flex items-center justify-center text-gray-500">
-                        [Placeholder for future charts/reports]
+
+                    {/* RIGHT: FINANCIAL INTELLIGENCE (1/3 width) */}
+                    <div className="space-y-6">
+                        {/* Interactive Charts */}
+                        <InteractiveAnalytics db={db} appId={appId} />
+
+                        {/* System Status Panel */}
+                        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                            <h3 className="font-bold text-slate-800 mb-4">System Status</h3>
+                            <div className="space-y-3">
+                                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                                        <span className="text-sm font-medium text-blue-700">System Online</span>
+                                    </div>
+                                    <span className="text-xs font-bold text-blue-800">Operational</span>
+                                </div>
+
+                                <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-100">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                        <span className="text-sm font-medium text-green-700">Data Sync</span>
+                                    </div>
+                                    <span className="text-xs font-bold text-green-800">Up to Date</span>
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                </div>
 
-                <div className="md:col-span-1 bg-white p-6 rounded-xl shadow-md flex flex-col justify-center items-center space-y-4">
-                    <button
-                        onClick={() => onNavigate('budgetManagement')}
-                        className="w-full p-4 bg-orange-500 text-white font-semibold rounded-md text-lg hover:bg-orange-600 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <Settings size={24} />
-                        <span>Budget Management</span>
-                    </button>
-                    <button
-                        onClick={() => onNavigate('bankManagement')}
-                        className="w-full p-4 bg-teal-600 text-white font-semibold rounded-md text-lg hover:bg-teal-700 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <Landmark size={24} />
-                        <span>Bank Management</span>
-                    </button>
-                    <button
-                        onClick={() => onNavigate('vendorManagement')}
-                        className="w-full p-4 bg-cyan-600 text-white font-semibold rounded-md text-lg hover:bg-cyan-700 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <Users size={24} />
-                        <span>Vendor Management</span>
-                    </button>
-                    <button
-                        onClick={() => onNavigate('masterLogDashboard')}
-                        className="w-full p-4 bg-indigo-500 text-white font-semibold rounded-md text-lg hover:bg-indigo-600 transition-colors flex items-center justify-center space-x-2"
-                    >
-                        <FileText size={24} />
-                        <span>Master Log & WHT</span>
-                    </button>
-
-                    <button
-                        onClick={() => setShowStrategicReports(true)}
-                        className="w-full p-4 bg-gradient-to-r from-blue-600 to-indigo-700 text-white font-semibold rounded-md text-lg hover:from-blue-700 hover:to-indigo-800 transition-all flex items-center justify-center space-x-2"
-                    >
-                        <BarChart2 size={24} />
-                        <span>Strategic Reports</span>
-                    </button>
                 </div>
             </div>
-
-
 
             {/* Strategic Reporting Hub Modal */}
             {showStrategicReports && (
