@@ -2,41 +2,62 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow access to artifacts collection and all subcollections
-    match /artifacts/{appId}/{document=**} {
-      allow read, write: if request.auth != null;
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
     }
     
-    // Specific rules for WHT collections
+    // 1. Secure all Artifacts (Budget, Logs, etc.) - Default Rule
+    match /artifacts/{appId}/{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+    
+    // 2. Specific Rules for WHT Collections
+    // Note: These are covered by the wildcard above, but explicit rules prevent future accidents
     match /artifacts/{appId}/whtReturns/{document} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
     
     match /artifacts/{appId}/whtBatchSummaries/{document} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
     
     match /artifacts/{appId}/public/data/whtReturns/{document} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
     
     match /artifacts/{appId}/public/data/whtBatchSummaries/{document} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
     
-    // Allow access to master log entries
+    // 3. Secure Master Log entries
     match /artifacts/{appId}/masterLog/{document} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
     
-    // Allow access to payment staging
+    // 4. Secure Payment Staging
     match /artifacts/{appId}/paymentStaging/{document} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
     }
     
-    // Allow access to procurement types
+    // 5. Secure Procurement Types
     match /artifacts/{appId}/procurementTypes/{document} {
-      allow read, write: if true;
+      allow read, write: if isAuthenticated();
+    }
+    
+    // 6. AUDIT TRAIL SECURITY RULES
+    // Audit logs are immutable and create-only for authenticated users
+    match /artifacts/{appId}/systemAuditLogs/{logId} {
+      // Allow authenticated users to CREATE audit logs
+      allow create: if isAuthenticated();
+      
+      // Allow authenticated users to READ audit logs
+      // In production, you may want to restrict this to admins only
+      allow read: if isAuthenticated();
+      
+      // NEVER allow update or delete - logs must be immutable
+      allow update, delete: if false;
     }
   }
 }

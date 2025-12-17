@@ -9,14 +9,15 @@ import { BudgetValidationService } from '../services/BudgetValidationService';
 import { BudgetRealTimeService } from '../services/BudgetRealTimeService';
 import VendorDiscoveryService from '../services/VendorDiscoveryService';
 import { safeToFixed } from '../utils/formatters';
+import AuditService, { AUDIT_ACTIONS } from '../services/AuditService';
+import { auth } from '../firebase-config';
 
-const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout }) => {
+const BudgetManagementPage = ({ db, userId, appId, onNavigate, onLogout }) => {
     const [budgetLines, setBudgetLines] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showAddForm, setShowAddForm] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
     const [showImportModal, setShowImportModal] = useState(false);
-    const [importFile, setImportFile] = useState(null);
     const [importPreview, setImportPreview] = useState(null);
     const [importStatus, setImportStatus] = useState('');
     const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth());
@@ -37,6 +38,14 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
     const vendorDiscoveryService = useMemo(() => {
         if (db && appId) {
             return new VendorDiscoveryService(db, appId);
+        }
+        return null;
+    }, [db, appId]);
+
+    // Audit service instance
+    const auditService = useMemo(() => {
+        if (db && appId) {
+            return new AuditService(db, appId);
         }
         return null;
     }, [db, appId]);
@@ -185,13 +194,8 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
                     // Get all cached budget lines
                     const cachedData = BudgetRealTimeService.getAllCachedBudgetLines();
 
-                    // If no budget lines exist, create sample data
-                    if (cachedData.length === 0) {
-                        console.log('[BudgetManagement] No budget lines found, creating samples...');
-                        createSampleBudgetLines().then(() => {
-                            console.log('[BudgetManagement] Sample budget lines created');
-                        });
-                    } else {
+                    // Initialize monthly balances for budget lines
+                    if (cachedData.length > 0) {
                         // Initialize monthly balances for existing budget lines
                         const enhancedData = cachedData.map(line => {
                             if (!line.monthlyBalances) {
@@ -249,13 +253,8 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
                     });
                 });
 
-                // If no budget lines exist, create sample data
-                if (data.length === 0) {
-                    console.log('[BudgetManagement] No budget lines found, creating samples...');
-                    createSampleBudgetLines().then(() => {
-                        console.log('[BudgetManagement] Sample budget lines created');
-                    });
-                } else {
+                // Initialize monthly balances for budget lines
+                if (data.length > 0) {
                     // Initialize monthly balances for existing budget lines
                     const enhancedData = data.map(line => {
                         if (!line.monthlyBalances) {
@@ -311,10 +310,7 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
                 });
             });
 
-            if (data.length === 0) {
-                console.log('[BudgetManagement] No budget lines found, creating samples...');
-                await createSampleBudgetLines();
-            } else {
+            if (data.length > 0) {
                 // Initialize monthly balances for existing budget lines
                 const enhancedData = data.map(line => {
                     if (!line.monthlyBalances) {
@@ -334,59 +330,8 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
         }
     };
 
-    const createSampleBudgetLines = async () => {
-        if (!db || !userId) return;
-
-        try {
-            const budgetRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
-            const sampleData = [
-                {
-                    accountNo: '12200',
-                    name: 'Access Control',
-                    deptCode: 'COM001',
-                    deptDimension: 'Sales & Business Development',
-                    monthlyValues: [-111000, -111000, -111000, -111000, -111000, -111000, -111000, -111000, -111000, -111000, -111000, -111000],
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                },
-                {
-                    accountNo: '12202',
-                    name: 'Consummables',
-                    deptCode: 'COM001',
-                    deptDimension: 'Sales & Business Development',
-                    monthlyValues: [-2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33, -2255458.33],
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                },
-                {
-                    accountNo: '12206',
-                    name: 'Cardbody',
-                    deptCode: 'COM001',
-                    deptDimension: 'Sales & Business Development',
-                    monthlyValues: [-88337500, -88337500, -88337500, -88337500, -88337500, -88337500, -88337500, -88337500, -88337500, -88337500, -88337500, -88337500],
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                },
-                {
-                    accountNo: '21202',
-                    name: 'Access Control COS',
-                    deptCode: 'CIO004',
-                    deptDimension: 'CTOO',
-                    monthlyValues: [111000, 111000, 111000, 111000, 111000, 111000, 111000, 111000, 111000, 111000, 111000, 111000],
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                }
-            ];
-
-            for (const budgetLine of sampleData) {
-                await addDoc(budgetRef, budgetLine);
-            }
-
-            console.log('Sample budget lines created successfully');
-        } catch (error) {
-            console.error('Error creating sample budget lines:', error);
-        }
-    };
+    // Hardcoded sample data removed - budget lines are now fully dynamic
+    // Users can import from Excel or create manually via the UI
 
     // Debug status
     const getServiceStatus = () => {
@@ -423,7 +368,6 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
     };
 
     const handleImportFile = async (file) => {
-        setImportFile(file);
         setImportStatus('Processing file...');
 
         try {
@@ -574,6 +518,16 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
 
             await addDoc(budgetRef, newBudgetLine);
 
+            // Log budget line creation
+            if (auditService && auth?.currentUser) {
+                auditService.log(
+                    AUDIT_ACTIONS.CREATE,
+                    'BudgetLine',
+                    `Created budget line: ${formData.name} (${formData.accountNo})`,
+                    auth.currentUser
+                );
+            }
+
             // Reset form
             setFormData({
                 accountNo: '',
@@ -614,6 +568,16 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
 
             await setDoc(budgetRef, updatedData, { merge: true });
 
+            // Log budget line update
+            if (auditService && auth?.currentUser) {
+                auditService.log(
+                    AUDIT_ACTIONS.UPDATE,
+                    'BudgetLine',
+                    `Updated budget line: ${formData.name} (${editingItem.id})`,
+                    auth.currentUser
+                );
+            }
+
             // Reset form and editing state
             setEditingItem(null);
             setFormData({
@@ -648,7 +612,21 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onBack, onLogout 
         if (confirm('Are you sure you want to delete this budget line?')) {
             try {
                 const budgetRef = doc(db, `artifacts/${appId}/public/data/budgetLines`, id);
+
+                // Get the budget line name before deletion for logging
+                const budgetLineToDelete = budgetLines.find(line => line.id === id);
+
                 await deleteDoc(budgetRef);
+
+                // Log deletion
+                if (auditService && budgetLineToDelete && auth?.currentUser) {
+                    auditService.log(
+                        AUDIT_ACTIONS.DELETE,
+                        'BudgetLine',
+                        `Deleted budget line: ${budgetLineToDelete.name} (${budgetLineToDelete.accountNo})`,
+                        auth.currentUser
+                    );
+                }
 
                 // Reload budget lines
                 const budgetRef2 = collection(db, `artifacts/${appId}/public/data/budgetLines`);

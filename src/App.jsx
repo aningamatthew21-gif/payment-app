@@ -16,10 +16,12 @@ import PaymentGeneratorPage from './pages/PaymentGeneratorPage.jsx';
 import BudgetManagementPage from './pages/BudgetManagementPage.jsx';
 import BankManagementPage from './pages/BankManagementPage.jsx';
 import VendorManager from './components/vendors/VendorManager.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 
 // Components
 import MasterLogDashboard from './components/MasterLogDashboard.jsx';
 import ExcelDemo from './components/ExcelDemo.jsx';
+import AuditService, { AUDIT_ACTIONS } from './services/AuditService';
 
 // Global variables from the environment
 const appId = import.meta.env.VITE_FIREBASE_APP_ID;
@@ -27,10 +29,17 @@ const appId = import.meta.env.VITE_FIREBASE_APP_ID;
 const AppContent = () => {
   const [userId, setUserId] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showTestSettings, setShowTestSettings] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Initialize audit service
+  const auditService = React.useMemo(() => {
+    if (db && appId) {
+      return new AuditService(db, appId);
+    }
+    return null;
+  }, [db, appId]);
 
   // Navigation adapter for backward compatibility
   const handleNavigate = (page, params = {}) => {
@@ -44,12 +53,22 @@ const AppContent = () => {
         break;
       case 'dashboard':
         navigate('/dashboard');
+        // Log navigation
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Dashboard', 'Navigated to dashboard', auth.currentUser);
+        }
         break;
       case 'weeklyPayments':
         navigate('/weekly-payments');
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Weekly Payments', 'Viewed weekly payments', auth.currentUser);
+        }
         break;
       case 'weeklyPaymentsDetail':
         navigate('/weekly-payments/detail', { state: params });
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Weekly Payments Detail', `Viewed detail for sheet: ${params.sheetName}`, auth.currentUser);
+        }
         break;
       case 'paymentGenerator':
         navigate('/payment-generator', {
@@ -58,21 +77,45 @@ const AppContent = () => {
             initialSheetName: params.sheetName
           }
         });
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Payment Generator', 'Opened payment generator', auth.currentUser);
+        }
         break;
       case 'budgetManagement':
         navigate('/budget-management');
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Budget Management', 'Viewed budget management', auth.currentUser);
+        }
         break;
       case 'bankManagement':
         navigate('/bank-management');
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Bank Management', 'Viewed bank management', auth.currentUser);
+        }
         break;
       case 'vendorManagement':
         navigate('/vendor-management');
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Vendor Management', 'Viewed vendor database', auth.currentUser);
+        }
         break;
       case 'masterLogDashboard':
         navigate('/master-log');
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Master Log', 'Viewed master log dashboard', auth.currentUser);
+        }
         break;
       case 'excelDemo':
         navigate('/excel-demo');
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Excel Demo', 'Viewed Excel demo', auth.currentUser);
+        }
+        break;
+      case 'settings':
+        navigate('/settings');
+        if (auditService && auth?.currentUser) {
+          auditService.log(AUDIT_ACTIONS.VIEW_PAGE, 'Settings', 'Accessed settings', auth.currentUser);
+        }
         break;
       default:
         console.warn(`Unknown page navigation: ${page}`);
@@ -107,6 +150,12 @@ const AppContent = () => {
       const result = await signInAnonymously(auth);
       setUserId(result.user.uid);
       console.log('[App] Anonymous sign-in successful, navigating to dashboard');
+
+      // Log successful login
+      if (auditService) {
+        auditService.log(AUDIT_ACTIONS.LOGIN, 'Authentication', 'Anonymous user logged in successfully', result.user);
+      }
+
       navigate('/dashboard');
 
     } catch (error) {
@@ -118,7 +167,14 @@ const AppContent = () => {
   const handleLogout = async () => {
     try {
       console.log('[App] User logging out...');
+      const currentUser = auth?.currentUser;
+
       if (auth) {
+        // Log logout before signing out
+        if (auditService && currentUser) {
+          auditService.log(AUDIT_ACTIONS.LOGOUT, 'Authentication', 'User logged out', currentUser);
+        }
+
         await signOut(auth);
       }
       setUserId(null);
@@ -178,8 +234,6 @@ const AppContent = () => {
     onNavigate: handleNavigate,
     onBack: handleBack,
     onLogout: handleLogout,
-    showTestSettings,
-    setShowTestSettings,
   };
 
   return (
@@ -200,6 +254,7 @@ const AppContent = () => {
       <Route path="/vendor-management" element={<VendorManager {...commonProps} />} />
       <Route path="/master-log" element={<MasterLogDashboard {...commonProps} onNavigate={handleNavigate} />} />
       <Route path="/excel-demo" element={<ExcelDemo />} />
+      <Route path="/settings" element={<SettingsPage {...commonProps} />} />
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );

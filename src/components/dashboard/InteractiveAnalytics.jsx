@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { X, FileText } from 'lucide-react';
 import { collection, getDocs, query, where, orderBy, limit } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 
 /**
  * InteractiveAnalytics Component
@@ -61,6 +62,29 @@ const InteractiveAnalytics = ({ db, appId }) => {
 
         const fetchData = async () => {
             try {
+                // CRITICAL FIX: Wait for Firebase auth to be ready before fetching data
+                // This ensures the authentication token is attached to Firestore requests
+                const auth = getAuth();
+
+                // Wait for auth state to settle (max 2 seconds)
+                const authReady = await Promise.race([
+                    new Promise((resolve) => {
+                        const unsubscribe = onAuthStateChanged(auth, (user) => {
+                            unsubscribe();
+                            resolve(user);
+                        });
+                    }),
+                    new Promise((resolve) => setTimeout(() => resolve(null), 2000))
+                ]);
+
+                if (!authReady) {
+                    console.warn('[InteractiveAnalytics] No authenticated user - skipping data fetch');
+                    setLoading(false);
+                    return;
+                }
+
+                console.log('[InteractiveAnalytics] Auth confirmed, fetching data...');
+
                 // Fetch budget lines
                 const bSnapshot = await getDocs(collection(db, `artifacts/${appId}/public/data/budgetLines`));
                 const budgetLines = bSnapshot.docs.map(d => ({ id: d.id, ...d.data() }));
