@@ -27,6 +27,18 @@ class PaymentFinalizationService {
       console.log('[PaymentFinalizationService] Starting payment finalization process');
       console.log('[PaymentFinalizationService] Payments to finalize:', payments.length);
 
+      // ✅ FIXED - Verify received payment data includes all edited fields
+      console.log('[PaymentFinalizationService] Payment data verification:', payments.map(p => ({
+        id: p.id,
+        vendor: p.vendor,
+        budgetLine: p.budgetLine || p.budgetItem,
+        budgetItem: p.budgetItem,
+        procurementType: p.procurementType,
+        whtRate: p.whtRate,
+        netPayable: p.netPayable,
+        currency: p.currency
+      })));
+
       onProgress('VALIDATING');
 
       // Generate batch ID
@@ -636,7 +648,7 @@ class PaymentFinalizationService {
           if (metadata.weeklySheetId && metadata.weeklySheetId !== 'Ad-hoc') {
             paymentRef = doc(
               db,
-              `artifacts / ${appId} /public/data / weeklySheets / ${metadata.weeklySheetId}/payments`,
+              `artifacts/${appId}/public/data/weeklySheets/${metadata.weeklySheetId}/payments`,
               payment.id
             );
           } else {
@@ -740,6 +752,15 @@ class PaymentFinalizationService {
 
       // Prepare transaction data for each payment
       const transactions = payments.map(payment => {
+        // ✅ FIXED - Log payment data before transformation
+        console.log('[PaymentFinalizationService] Preparing master log entry for payment:', {
+          id: payment.id,
+          vendor: payment.vendor,
+          budgetLine: payment.budgetLine || payment.budgetItem,
+          procurementType: payment.procurementType,
+          whtRate: payment.whtRate
+        });
+
         // Calculate percentage correctly: (amountThisTransaction / totalAmount) * 100
         const amountThisRun = Number(payment.netPayable || payment.amountThisTransaction || 0);
         const totalAmount = Number(payment.total_amount || payment.amount || payment.fullPretax || 0);

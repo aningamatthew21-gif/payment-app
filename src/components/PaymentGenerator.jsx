@@ -602,7 +602,8 @@ const PaymentGenerator = ({
       paymentPercentage: paymentPercentage,
       payment_status: 'pending', // Will be updated to 'partial' or 'paid' on finalization
 
-      budgetItem: budgetLine,
+      budgetLine: budgetLine,  // ✅ FIXED - Explicitly set budgetLine for consistency
+      budgetItem: budgetLine,  // Keep for backward compatibility
       // Enhanced data fields for better tracking
       originalAmount: preTaxAmount,
       currency,
@@ -655,6 +656,7 @@ const PaymentGenerator = ({
           vendor: "Vendor",
           invoiceNo: "Invoice No",
           description: "Description",
+          budgetLine: "Budget Line",  // ✅ FIXED - Monitor budget line changes
           paymentMode: "Payment Mode",
           bank: "Bank",
           procurementType: "Procurement Type",
@@ -669,7 +671,7 @@ const PaymentGenerator = ({
         // Check text/dropdown fields
         Object.entries(fieldsToMonitor).forEach(([field, label]) => {
           const currentValues = {
-            vendor, invoiceNo, description, paymentMode, bank,
+            vendor, invoiceNo, description, budgetLine, paymentMode, bank,  // ✅ FIXED - Include budgetLine
             procurementType, taxType, currency, vatDecision
           };
 

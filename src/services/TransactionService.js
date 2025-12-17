@@ -84,11 +84,18 @@ export const createUndoLogEntry = async (db, appId, undoData) => {
       whtArchiveInfo: undoData.whtArchiveInfo,
       budgetNames: undoData.budgetNames || [],
       budgetOrigBalances: undoData.budgetOrigBalances || [],
-      weeklySheetRowsAffected: undoData.weeklySheetRowsAffected || [],
+      weeklySheetRowsAffected: undoData.weeklySheetRowsAffected || undoData.payments?.map(p => p.originalSheetRow).filter(Boolean) || [],
       weeklyOrigData: undoData.weeklyOrigData || [],
       masterLogIds: undoData.masterLogIds || [],
       isUndone: false,
-      createdAt: serverTimestamp()
+      createdAt: serverTimestamp(),
+      // Include any additional fields from undoData that might be present
+      ...(undoData.weeklySheetData && { weeklySheetData: undoData.weeklySheetData }),
+      ...(undoData.weeklySheetName && { weeklySheetName: undoData.weeklySheetName }),
+      ...(undoData.status && { status: undoData.status }),
+      ...(undoData.canUndo !== undefined && { canUndo: undoData.canUndo }),
+      ...(undoData.completedAt && { completedAt: undoData.completedAt }),
+      ...(undoData.updatedAt && { updatedAt: undoData.updatedAt })
     };
 
     const docRef = await addDoc(collection(db, getCollectionPath(appId, COLLECTIONS.UNDO_LOG)), undoEntry);
@@ -290,14 +297,14 @@ export const undoTransactionBatch = async (db, appId, batchId) => {
 
       // Use correct collection path: artifacts/${appId}/public/data/masterLog
       const masterLogRef = collection(db, `artifacts/${appId}/public/data/masterLog`);
-      
+
       // Query by transactionID field (not document ID)
       for (const transactionId of undoEntry.masterLogIds) {
         try {
           // Find document by transactionID field
           const masterLogQuery = query(masterLogRef, where('transactionID', '==', transactionId));
           const masterLogSnapshot = await getDocs(masterLogQuery);
-          
+
           if (!masterLogSnapshot.empty) {
             masterLogSnapshot.forEach((docSnap) => {
               batch.delete(docSnap.ref);
@@ -391,7 +398,7 @@ export const undoTransactionBatch = async (db, appId, batchId) => {
           // Determine collection based on weeklySheetId or sheetName
           const weeklySheetId = payment.weeklySheetId || undoEntry.weeklySheetData?.sheetId || undoEntry.weeklySheetName;
           let paymentRef;
-          
+
           if (weeklySheetId) {
             paymentRef = doc(db, `artifacts/${appId}/public/data/weeklySheets/${weeklySheetId}/payments`, payment.id);
           } else {
@@ -400,7 +407,7 @@ export const undoTransactionBatch = async (db, appId, batchId) => {
 
           // Read current payment state before updating
           const paymentDoc = await getDoc(paymentRef);
-          
+
           if (paymentDoc.exists()) {
             const currentData = paymentDoc.data();
             const amountToRevert = Number(payment.netPayable || payment.amountThisTransaction || 0);
@@ -428,7 +435,7 @@ export const undoTransactionBatch = async (db, appId, batchId) => {
               undoneAt: serverTimestamp(),
               undoneByBatchId: batchId
             });
-            
+
             console.log(`[TransactionService] ✓ Payment ${payment.id} status reverted: ${currentData.payment_status || 'unknown'} -> ${newStatus}, paid: ${currentPaid} -> ${newPaid}`);
           } else {
             console.warn(`[TransactionService] Payment document not found: ${payment.id}`);

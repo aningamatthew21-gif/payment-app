@@ -14,8 +14,8 @@ const ViewToggle = ({ activeTab, onToggle }) => (
             <button
                 onClick={() => onToggle('dashboard')}
                 className={`flex items-center gap-2 px-8 py-3 rounded-full text-sm font-bold transition-all duration-200 ${activeTab === 'dashboard'
-                        ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200'
-                        : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200'
+                    : 'text-slate-500 hover:text-slate-700'
                     }`}
             >
                 <PieChart size={18} />
@@ -25,8 +25,8 @@ const ViewToggle = ({ activeTab, onToggle }) => (
             <button
                 onClick={() => onToggle('operations')}
                 className={`flex items-center gap-2 px-8 py-3 rounded-full text-sm font-bold transition-all duration-200 ${activeTab === 'operations'
-                        ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200'
-                        : 'text-slate-500 hover:text-slate-700'
+                    ? 'bg-white text-blue-600 shadow-sm ring-1 ring-slate-200'
+                    : 'text-slate-500 hover:text-slate-700'
                     }`}
             >
                 <LayoutDashboard size={18} />
@@ -47,26 +47,39 @@ const DashboardPage = ({ onNavigate, onLogout, userId, db, appId }) => {
 
     // Load budget summary data
     useEffect(() => {
-        if (!db || !userId) return;
+        console.log('[Dashboard] useEffect triggered. db:', !!db, 'userId:', userId, 'appId:', appId);
+
+        if (!db || !userId) {
+            console.warn('[Dashboard] Missing db or userId, skipping data load');
+            return;
+        }
 
         const loadBudgetSummary = async () => {
             try {
                 const budgetRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
+                console.log('[Dashboard] Fetching from path:', `artifacts/${appId}/public/data/budgetLines`);
+
                 const snapshot = await getDocs(budgetRef);
+                console.log('[Dashboard] Snapshot received, doc count:', snapshot.size);
 
                 let total = 0;
                 let spent = 0;
 
                 snapshot.forEach(doc => {
                     const budgetLine = doc.data();
+                    console.log('[Dashboard] Processing budget line:', doc.id, budgetLine);
 
                     // Calculate total from monthlyValues array
                     const allocated = budgetLine.monthlyValues?.reduce((sum, val) => sum + Math.abs(val || 0), 0) || 0;
                     const spentAmount = Math.abs(budgetLine.totalSpent || budgetLine.totalSpendToDate || 0);
 
+                    console.log('[Dashboard] Line:', budgetLine.name, '- Allocated:', allocated, 'Spent:', spentAmount);
+
                     total += allocated;
                     spent += spentAmount;
                 });
+
+                console.log('[Dashboard] FINAL TOTALS - Total:', total, 'Spent:', spent, 'Available:', total - spent);
 
                 setBudgetSummary({
                     totalBudget: total,
@@ -74,7 +87,7 @@ const DashboardPage = ({ onNavigate, onLogout, userId, db, appId }) => {
                     availableBudget: total - spent
                 });
             } catch (error) {
-                console.error('Error loading budget summary:', error);
+                console.error('[Dashboard] Error loading budget summary:', error);
             }
         };
 
@@ -97,22 +110,19 @@ const DashboardPage = ({ onNavigate, onLogout, userId, db, appId }) => {
                     {/* KPI Metrics Section */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <MetricCard
-                            title="Total Budget"
-                            value={`GH₵ ${budgetSummary.totalBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            subtitle="Allocated across all departments"
-                            color="blue"
+                            label="Total Budget"
+                            value={budgetSummary.totalBudget}
+                            type="total"
                         />
                         <MetricCard
-                            title="Available Funds"
-                            value={`GH₵ ${budgetSummary.availableBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            subtitle="Ready for new commitments"
-                            color="green"
+                            label="Available Funds"
+                            value={budgetSummary.availableBudget}
+                            type="available"
                         />
                         <MetricCard
-                            title="Utilized"
-                            value={`GH₵ ${budgetSummary.spentBudget.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
-                            subtitle={`${budgetSummary.totalBudget > 0 ? ((budgetSummary.spentBudget / budgetSummary.totalBudget) * 100).toFixed(1) : 0}% of total budget`}
-                            color="purple"
+                            label="Utilized"
+                            value={budgetSummary.spentBudget}
+                            type="spent"
                         />
                     </div>
 
