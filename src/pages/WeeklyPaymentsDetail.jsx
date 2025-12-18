@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, getDocs, addDoc, writeBatch, updateDoc } from 'firebase/firestore';
-import { ArrowLeft, LogOut, CreditCard, RefreshCw, Plus, FileText, Edit, Trash2, Save, X, FileSpreadsheet, Layers } from 'lucide-react';
+import { ArrowLeft, LogOut, CreditCard, RefreshCw, Plus, FileText, Edit, Trash2, Save, X, FileSpreadsheet } from 'lucide-react';
 import Layout from '../components/Layout/Layout';
 import VendorDiscoveryService from '../services/VendorDiscoveryService';
 import ExcelImportExport from '../components/ExcelImportExport';
 import FlexibleVendorInput from '../components/FlexibleVendorInput';
 import DocumentGenerator from '../components/DocumentGenerator';
-import PaymentStaging from '../components/PaymentStaging';
+// PaymentStaging has been relocated to PaymentGenerator (Dual-Mode SS/BF)
 import EnhancedUndoPanel from '../components/EnhancedUndoPanel';
 import { safeToFixed } from '../utils/formatters';
 import { useSettings } from '../contexts/SettingsContext';
@@ -26,7 +26,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
     const [editingPayment, setEditingPayment] = useState(null);
     const [showDocumentGenerator, setShowDocumentGenerator] = useState(false);
     const [showUndoPanel, setShowUndoPanel] = useState(false);
-    const [showPaymentStaging, setShowPaymentStaging] = useState(false);
+    // showPaymentStaging state removed - Batch Finalize now in PaymentGenerator
     const [showExcelModal, setShowExcelModal] = useState(false);
     const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'pending' | 'partial' | 'paid'
 
@@ -719,13 +719,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                             <Plus size={20} />
                             <span>Add Transaction</span>
                         </button>
-                        <button
-                            onClick={() => setShowPaymentStaging(true)}
-                            className="flex-1 p-3 bg-purple-500 text-white font-semibold rounded-md flex items-center justify-center space-x-2 hover:bg-purple-600 transition-colors"
-                        >
-                            <Layers size={20} />
-                            <span>Batch Finalize</span>
-                        </button>
+                        {/* Batch Finalize button removed - now accessed via Payment Generator's BF mode toggle */}
                         <button
                             onClick={() => setShowExcelModal(true)}
                             className="flex-1 p-3 bg-indigo-500 text-white font-semibold rounded-md flex items-center justify-center space-x-2 hover:bg-indigo-600 transition-colors"
@@ -1112,30 +1106,7 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 )
             }
 
-            {/* Payment Staging Modal */}
-            {
-                showPaymentStaging && (
-                    <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
-                        <div className="p-4">
-                            <button
-                                onClick={() => setShowPaymentStaging(false)}
-                                className="mb-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300 flex items-center"
-                            >
-                                <ArrowLeft size={16} className="mr-2" /> Back to Payments
-                            </button>
-                            <PaymentStaging
-                                db={db}
-                                appId={appId}
-                                userId={userId}
-                                weeklySheetId={sheetName}
-                                onClose={() => setShowPaymentStaging(false)}
-                                // Pass payments with index as originalSheetRow
-                                payments={paymentsWithRow}
-                            />
-                        </div>
-                    </div>
-                )
-            }
+            {/* PaymentStaging Modal removed - now integrated into PaymentGenerator's Batch Finalize (BF) mode */}
 
             {/* Excel Import/Export Modal */}
             {showExcelModal && (

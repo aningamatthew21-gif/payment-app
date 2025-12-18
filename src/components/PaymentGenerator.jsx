@@ -30,6 +30,7 @@ import { VendorService } from '../services/VendorService';
 import { BankService } from '../services/BankService';
 import ProcessingStatusModal from './ProcessingStatusModal';
 import DocumentPreviewModal from './DocumentPreviewModal';
+import PaymentStaging from './PaymentStaging'; // For Batch Finalize (BF) mode
 import * as pdfjsLib from 'pdfjs-dist';
 
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -109,6 +110,9 @@ const PaymentGenerator = ({
   const [selectedSheetId, setSelectedSheetId] = useState(weeklySheetId || '');
   // FIX: Local state for instant UI updates
   const [localAvailablePayments, setAvailablePayments] = useState(availablePayments || []);
+
+  // DUAL-MODE: SS (Simple Single) or BF (Batch Finalize)
+  const [mode, setMode] = useState('SS');
 
   // Sync local state with prop
   useEffect(() => {
@@ -1061,726 +1065,780 @@ const PaymentGenerator = ({
 
   return (
     <div className="space-y-6">
-      {/* Grid Layout for Main Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Left Panel - Weekly Sheet Selection and Available Payments */}
-        <div className="lg:col-span-1 space-y-6">
-          {/* Select Weekly Sheet Section */}
-          <div className="bg-gray-50 rounded-lg p-4 border border-blue-200 shadow-sm">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">Weekly Sheet Selection</h3>
-            <p className="text-xs text-gray-500 mb-4 uppercase tracking-wide font-semibold">Required for Staging</p>
-            <div className="flex gap-3">
-              <select
-                className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                value={selectedSheetId}
-                onChange={(e) => {
-                  setSelectedSheetId(e.target.value);
-                  if (onSheetSelect) onSheetSelect(e.target.value);
-                }}
-              >
-                <option value="">Select a sheet...</option>
-                {sheets.map(sheet => (
-                  <option key={sheet.id} value={sheet.id}>{sheet.name}</option>
-                ))}
-              </select>
-              <button
-                className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
-                onClick={() => onLoadPayments && onLoadPayments(selectedSheetId)}
-                disabled={!selectedSheetId}
-              >
-                Load
-              </button>
-            </div>
-          </div>
-
-          {/* Available Payments Section */}
-          <div className="bg-gray-50 rounded-lg p-4 border">
-            <h3 className="text-lg font-semibold text-gray-700 mb-4">Available Payments</h3>
-            {availablePayments.length === 0 ? (
-              <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
-                <p>No payments available.</p>
-                <p className="text-sm mt-2">Select a weekly sheet and click "Load Payments" to see available payments.</p>
-              </div>
-            ) : (
-              <div className="max-h-60 overflow-y-auto">
-                <table className="min-w-full">
-                  <thead className="bg-gray-100">
-                    <tr>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
-                      <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {localAvailablePayments
-                      .filter(payment => {
-                        // Filter out fully paid payments
-                        // Check both payment_status AND legacy paid boolean
-                        if (payment.payment_status === 'paid') return false;
-                        if (payment.paid === true && !payment.payment_status) return false;
-
-                        // Also check if paid_amount >= total_amount (for safety)
-                        const paid = Number(payment.paid_amount || 0);
-                        const total = Number(payment.total_amount || payment.amount || 0);
-                        if (total > 0 && paid >= (total - 0.01)) return false;
-
-                        return true;
-                      })
-                      .map((payment, index) => {
-                        const isPartial = payment.payment_status === 'partial';
-                        const originalIndex = localAvailablePayments.indexOf(payment); // Keep track of original index for selection
-
-                        return (
-                          <tr
-                            key={index}
-                            className={`cursor-pointer hover:bg-gray-50 ${selectedAvailable === originalIndex ? 'bg-blue-100' : isPartial ? 'bg-yellow-50' : ''
-                              }`}
-                            onClick={() => handleAvailablePaymentSelect(originalIndex)}
-                          >
-                            <td className="px-3 py-2 text-sm text-gray-900">{payment.date || 'N/A'}</td>
-                            <td className="px-3 py-2 text-sm text-gray-900">{payment.vendor}</td>
-                            <td className="px-3 py-2 text-sm text-gray-900">
-                              {payment.description}
-                              {isPartial && (
-                                <span className="block text-xs text-yellow-600 font-medium">
-                                  Partially Paid: {Number(payment.paid_amount).toFixed(2)} / {Number(payment.total_amount || payment.amount).toFixed(2)}
-                                </span>
-                              )}
-                            </td>
-                            <td className="px-3 py-2 text-sm text-gray-900">
-                              {isPartial
-                                ? (Number(payment.total_amount || payment.amount) - Number(payment.paid_amount)).toFixed(2)
-                                : payment.amount}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+      {/* MODE TOGGLE SWITCHER - SS (Simple Single) vs BF (Batch Finalize) */}
+      <div className="flex justify-center mb-4">
+        <div className="bg-slate-100 p-1.5 rounded-xl inline-flex shadow-inner border border-slate-200">
+          <button
+            onClick={() => setMode('SS')}
+            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${mode === 'SS'
+                ? 'bg-blue-600 text-white shadow-md'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'
+              }`}
+          >
+            Simple Single (SS)
+          </button>
+          <button
+            onClick={() => setMode('BF')}
+            className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${mode === 'BF'
+                ? 'bg-purple-600 text-white shadow-md'
+                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'
+              }`}
+          >
+            Batch Finalize (BF)
+          </button>
         </div>
+      </div>
 
-        {/* Right Panel - Weekly Sheet Selection and Payment Details */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Weekly Sheet Selection Section */}
-
-          {/* Selected Payment Details Section */}
-          {selectedAvailable !== null && (
-            <div className="bg-white rounded-lg p-6 border border-gray-200">
-              <h4 className="text-xl font-semibold text-gray-700 mb-6">Selected Payment Details</h4>
-
-              {/* Form Fields */}
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Vendor</label>
+      {mode === 'SS' ? (
+        /* ========== SIMPLE SINGLE MODE (Existing PaymentGenerator UI) ========== */
+        <>
+          {/* Grid Layout for Main Content */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left Panel - Weekly Sheet Selection and Available Payments */}
+            <div className="lg:col-span-1 space-y-6">
+              {/* Select Weekly Sheet Section */}
+              <div className="bg-gray-50 rounded-lg p-4 border border-blue-200 shadow-sm">
+                <h3 className="text-lg font-bold text-gray-800 mb-2">Weekly Sheet Selection</h3>
+                <p className="text-xs text-gray-500 mb-4 uppercase tracking-wide font-semibold">Required for Staging</p>
+                <div className="flex gap-3">
                   <select
-                    value={vendor}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'vendor', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    className="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    value={selectedSheetId}
+                    onChange={(e) => {
+                      setSelectedSheetId(e.target.value);
+                      if (onSheetSelect) onSheetSelect(e.target.value);
+                    }}
                   >
-                    <option value="">Select a vendor</option>
-                    {validationData.vendors.length > 0 ? (
-                      validationData.vendors.map((opt, index) => (
-                        <option key={opt.id || index} value={opt.value}>{opt.value}</option>
-                      ))
-                    ) : (
-                      <option value="" disabled>No vendors available</option>
-                    )}
+                    <option value="">Select a sheet...</option>
+                    {sheets.map(sheet => (
+                      <option key={sheet.id} value={sheet.id}>{sheet.name}</option>
+                    ))}
                   </select>
+                  <button
+                    className="px-4 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium shadow-sm"
+                    onClick={() => onLoadPayments && onLoadPayments(selectedSheetId)}
+                    disabled={!selectedSheetId}
+                  >
+                    Load
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Invoice No.</label>
-                  <input
-                    type="text"
-                    value={invoiceNo}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'invoiceNo', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    placeholder="Invoice Number"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-                  <input
-                    type="text"
-                    value={description}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'description', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    placeholder="Description"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Pre-tax Amount (Total Invoice)</label>
-                  <input
-                    type="number"
-                    value={preTaxAmount}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'preTaxAmount', value: Number(e.target.value) } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    placeholder="0"
-                  />
-                </div>
+              </div>
 
-                {/* SERVICE CHARGE SECTION */}
-                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium text-blue-800 flex items-center">
+              {/* Available Payments Section */}
+              <div className="bg-gray-50 rounded-lg p-4 border">
+                <h3 className="text-lg font-semibold text-gray-700 mb-4">Available Payments</h3>
+                {availablePayments.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500 border-2 border-dashed border-gray-300 rounded-lg">
+                    <p>No payments available.</p>
+                    <p className="text-sm mt-2">Select a weekly sheet and click "Load Payments" to see available payments.</p>
+                  </div>
+                ) : (
+                  <div className="max-h-60 overflow-y-auto">
+                    <table className="min-w-full">
+                      <thead className="bg-gray-100">
+                        <tr>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Vendor</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                          <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {localAvailablePayments
+                          .filter(payment => {
+                            // Filter out fully paid payments
+                            // Check both payment_status AND legacy paid boolean
+                            if (payment.payment_status === 'paid') return false;
+                            if (payment.paid === true && !payment.payment_status) return false;
+
+                            // Also check if paid_amount >= total_amount (for safety)
+                            const paid = Number(payment.paid_amount || 0);
+                            const total = Number(payment.total_amount || payment.amount || 0);
+                            if (total > 0 && paid >= (total - 0.01)) return false;
+
+                            return true;
+                          })
+                          .map((payment, index) => {
+                            const isPartial = payment.payment_status === 'partial';
+                            const originalIndex = localAvailablePayments.indexOf(payment); // Keep track of original index for selection
+
+                            return (
+                              <tr
+                                key={index}
+                                className={`cursor-pointer hover:bg-gray-50 ${selectedAvailable === originalIndex ? 'bg-blue-100' : isPartial ? 'bg-yellow-50' : ''
+                                  }`}
+                                onClick={() => handleAvailablePaymentSelect(originalIndex)}
+                              >
+                                <td className="px-3 py-2 text-sm text-gray-900">{payment.date || 'N/A'}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900">{payment.vendor}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900">
+                                  {payment.description}
+                                  {isPartial && (
+                                    <span className="block text-xs text-yellow-600 font-medium">
+                                      Partially Paid: {Number(payment.paid_amount).toFixed(2)} / {Number(payment.total_amount || payment.amount).toFixed(2)}
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-3 py-2 text-sm text-gray-900">
+                                  {isPartial
+                                    ? (Number(payment.total_amount || payment.amount) - Number(payment.paid_amount)).toFixed(2)
+                                    : payment.amount}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Panel - Weekly Sheet Selection and Payment Details */}
+            <div className="lg:col-span-2 space-y-6">
+              {/* Weekly Sheet Selection Section */}
+
+              {/* Selected Payment Details Section */}
+              {selectedAvailable !== null && (
+                <div className="bg-white rounded-lg p-6 border border-gray-200">
+                  <h4 className="text-xl font-semibold text-gray-700 mb-6">Selected Payment Details</h4>
+
+                  {/* Form Fields */}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Vendor</label>
+                      <select
+                        value={vendor}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'vendor', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="">Select a vendor</option>
+                        {validationData.vendors.length > 0 ? (
+                          validationData.vendors.map((opt, index) => (
+                            <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No vendors available</option>
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Invoice No.</label>
+                      <input
+                        type="text"
+                        value={invoiceNo}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'invoiceNo', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        placeholder="Invoice Number"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
+                      <input
+                        type="text"
+                        value={description}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'description', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        placeholder="Description"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Pre-tax Amount (Total Invoice)</label>
+                      <input
+                        type="number"
+                        value={preTaxAmount}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'preTaxAmount', value: Number(e.target.value) } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        placeholder="0"
+                      />
+                    </div>
+
+                    {/* SERVICE CHARGE SECTION */}
+                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-sm font-medium text-blue-800 flex items-center">
+                          <input
+                            type="checkbox"
+                            checked={state.useServiceCharge || false}
+                            onChange={(e) => {
+                              dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'useServiceCharge', value: e.target.checked } });
+                              // Reset amount if unchecked
+                              if (!e.target.checked) {
+                                dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: 0 } });
+                              }
+                            }}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                          />
+                          Apply WHT on Service Charge Only?
+                        </label>
+
+                        {/* Tooltip/Help Icon */}
+                        <div className="group relative">
+                          <svg className="w-4 h-4 text-blue-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          <span className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-10">
+                            Use this when WHT applies only to a specific fee (e.g., Boot Service Fee) and not the total invoice amount.
+                          </span>
+                        </div>
+                      </div>
+
+                      {state.useServiceCharge && (
+                        <div>
+                          <input
+                            type="number"
+                            value={state.serviceChargeAmount || ''}
+                            onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: Number(e.target.value) } })}
+                            className="w-full p-2 border border-blue-300 rounded-md focus:ring-2 focus:ring-blue-500 bg-white text-sm"
+                            placeholder="Enter Service Charge Amount"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">
+                            WHT ({((whtRate || 0) * 100).toFixed(1)}%) will be calculated on ₵{Number(state.serviceChargeAmount || 0).toLocaleString()} instead of the total.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Process as Partial Payment?</label>
                       <input
                         type="checkbox"
-                        checked={state.useServiceCharge || false}
+                        checked={isPartialPayment}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'isPartialPayment', value: e.target.checked } })}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      {/* Show prior payment info if this is a partial payment */}
+                      {selectedPaymentInfo.hasPartialHistory && (
+                        <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
+                          <p className="font-medium text-yellow-800">⚠️ Previous Partial Payment Detected</p>
+                          <div className="text-yellow-700 mt-1 space-y-1">
+                            <p>Total Invoice: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                            <p>Already Paid: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
+                            <p className="font-bold">Remaining: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({maxPaymentPercentage}%)</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Percentage to Pay (%)
+                        {maxPaymentPercentage < 100 && (
+                          <span className="text-orange-600 ml-2">Max: {maxPaymentPercentage}%</span>
+                        )}
+                      </label>
+                      <input
+                        type="number"
+                        value={paymentPercentage}
                         onChange={(e) => {
-                          dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'useServiceCharge', value: e.target.checked } });
-                          // Reset amount if unchecked
-                          if (!e.target.checked) {
-                            dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: 0 } });
+                          const newValue = Number(e.target.value);
+                          // Overpayment prevention
+                          if (newValue > maxPaymentPercentage) {
+                            alert(`Cannot pay more than ${maxPaymentPercentage.toFixed(1)}% (remaining balance)`);
+                            dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: maxPaymentPercentage } });
+                          } else {
+                            dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: newValue } });
                           }
                         }}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded mr-2"
+                        className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${paymentPercentage > maxPaymentPercentage ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        placeholder="100"
+                        min="1"
+                        max={maxPaymentPercentage}
                       />
-                      Apply WHT on Service Charge Only?
-                    </label>
-
-                    {/* Tooltip/Help Icon */}
-                    <div className="group relative">
-                      <svg className="w-4 h-4 text-blue-400 cursor-help" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <span className="absolute bottom-full right-0 mb-2 hidden group-hover:block w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg z-10">
-                        Use this when WHT applies only to a specific fee (e.g., Boot Service Fee) and not the total invoice amount.
-                      </span>
+                      {paymentPercentage > maxPaymentPercentage && (
+                        <p className="text-red-600 text-sm mt-1">
+                          ⚠️ Exceeds remaining balance! Max allowed: {maxPaymentPercentage}%
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Payment Mode</label>
+                      <select
+                        value={paymentMode}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentMode', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="">Select a mode</option>
+                        {validationData.paymentModes.length > 0 ? (
+                          validationData.paymentModes.map((opt, index) => (
+                            <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                          ))
+                        ) : (
+                          // Fallback to constants if no dynamic data
+                          PAYMENT_MODES.map(mode => (
+                            <option key={mode} value={mode}>{mode}</option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Bank</label>
+                      <select
+                        value={bank}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'bank', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="">Select a bank</option>
+                        {validationData.banks.length > 0 ? (
+                          validationData.banks.map((opt, index) => (
+                            <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No banks available</option>
+                        )}
+                      </select>
+                    </div>
+                    {/* MOMO Charge Rate - Always visible for user to set/view */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">MoMo Charge Rate (%)</label>
+                      <input
+                        type="number"
+                        value={state.customMomoRate !== undefined ? (state.customMomoRate * 100) : ((globalRates.momoRate || 0.01) * 100)}
+                        onChange={(e) => {
+                          // Update momoRate in the calculation context
+                          const newRate = Number(e.target.value) / 100;
+                          dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'customMomoRate', value: newRate } });
+                        }}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        placeholder="1"
+                        min="0"
+                        step="0.1"
+                      />
+                      <p className="text-xs text-gray-500 mt-1">Applies when Payment Mode is MOMO</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Tax Type</label>
+                      <select
+                        value={taxType}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'taxType', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="">Select a tax type</option>
+                        {validationData.taxTypes.length > 0 ? (
+                          validationData.taxTypes.map((opt, index) => (
+                            <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                          ))
+                        ) : (
+                          // Fallback
+                          TAX_TYPES.map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Procurement Type</label>
+                      <select
+                        value={procurementType}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'procurementType', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="">Select a type</option>
+                        {validationData.procurementTypes.length > 0 ? (
+                          validationData.procurementTypes.map((opt, index) => (
+                            <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                          ))
+                        ) : (
+                          // Fallback
+                          PROCUREMENT_TYPES.map(type => (
+                            <option key={type} value={type}>{type}</option>
+                          ))
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">FX Rate</label>
+                      <input
+                        type="number"
+                        value={fxRate}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'fxRate', value: Number(e.target.value) } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                        placeholder="0"
+                        step="0.01"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">VAT (Yes/No)</label>
+                      <select
+                        value={vatDecision}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'vatDecision', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        {VAT_OPTIONS.map(option => (
+                          <option key={option} value={option}>{option}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Budget Line</label>
+                      <select
+                        value={budgetLine}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'budgetLine', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="">Select a budget line</option>
+                        {validationData.budgetLines.length > 0 ? (
+                          validationData.budgetLines.map((opt, index) => (
+                            <option key={opt.id || index} value={opt.value}>
+                              {opt.value} {opt.description ? `- ${opt.description}` : ''}
+                            </option>
+                          ))
+                        ) : (
+                          <option value="" disabled>No budget lines available</option>
+                        )}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Transaction Currency</label>
+                      <select
+                        value={currency}
+                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'currency', value: e.target.value } })}
+                        className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                      >
+                        <option value="GHS">GHS</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                        <option value="GBP">GBP</option>
+                      </select>
                     </div>
                   </div>
 
-                  {state.useServiceCharge && (
-                    <div>
-                      <input
-                        type="number"
-                        value={state.serviceChargeAmount || ''}
-                        onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'serviceChargeAmount', value: Number(e.target.value) } })}
-                        className="w-full p-2 border border-blue-300 rounded-md focus:ring-2 focus:ring-blue-500 bg-white text-sm"
-                        placeholder="Enter Service Charge Amount"
-                      />
-                      <p className="text-xs text-blue-600 mt-1">
-                        WHT ({((whtRate || 0) * 100).toFixed(1)}%) will be calculated on ₵{Number(state.serviceChargeAmount || 0).toLocaleString()} instead of the total.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Process as Partial Payment?</label>
-                  <input
-                    type="checkbox"
-                    checked={isPartialPayment}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'isPartialPayment', value: e.target.checked } })}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  {/* Show prior payment info if this is a partial payment */}
-                  {selectedPaymentInfo.hasPartialHistory && (
-                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md text-sm">
-                      <p className="font-medium text-yellow-800">⚠️ Previous Partial Payment Detected</p>
-                      <div className="text-yellow-700 mt-1 space-y-1">
-                        <p>Total Invoice: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                        <p>Already Paid: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.paidAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</p>
-                        <p className="font-bold">Remaining: {currency === 'USD' ? '$' : '₵'}{selectedPaymentInfo.remainingAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({maxPaymentPercentage}%)</p>
+                  {/* Calculated Values Display */}
+                  <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+                    <h5 className="text-lg font-semibold text-gray-700 mb-4">Calculated Values</h5>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">WHT Amount</label>
+                        <p className="text-lg font-semibold text-gray-900">₵ {whtAmount.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">Levy Amount</label>
+                        <p className="text-lg font-semibold text-gray-900">₵ {levyAmount.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">VAT Amount</label>
+                        <p className="text-lg font-semibold text-gray-900">₵ {vatAmount.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">MoMo Charge</label>
+                        <p className="text-lg font-semibold text-gray-900">₵ {momoCharge.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600">Net Payable</label>
+                        <p className="text-lg font-semibold text-gray-900">₵ {amountThisTransaction.toFixed(2)}</p>
                       </div>
                     </div>
-                  )}
+                    <div className="mt-4">
+                      <label className="block text-sm font-medium text-gray-600">Budget Impact (USD)</label>
+                      <p className="text-lg font-semibold text-gray-900">$ {budgetImpactUSD.toFixed(2)}</p>
+                    </div>
+                  </div>
+
+                  {/* Action Buttons */}
+                  <div className="mt-6 flex justify-end space-x-3">
+                    <button
+                      onClick={handleClearReset}
+                      className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+                    >
+                      Clear & Reset
+                    </button>
+                    <button
+                      onClick={handleGenerateDocuments}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center font-semibold shadow-md"
+                    >
+                      <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      Generate Payment Documents
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Approval Selection Options - Full Width */}
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+              <h4 className="text-lg font-semibold text-gray-700 mb-4">Approval Selection</h4>
+
+              <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-800">
+                  <span className="font-medium">Required Fields:</span> Checked By, Approved By, and Authorized By must be selected before staging a payment.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Checked By <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={checkedBy}
+                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'checkedBy', value: e.target.value } })}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${!checkedBy ? 'border-red-300' : 'border-gray-300'
+                      }`}
+                  >
+                    <option value="">Select a signatory</option>
+                    {validationData.signatories.length > 0 ? (
+                      validationData.signatories.map((sig, index) => (
+                        <option key={sig.id || index} value={sig.value}>{sig.value}</option>
+                      ))
+                    ) : (
+                      SIGNATORIES.map(sig => (
+                        <option key={sig.value} value={sig.value}>{sig.label}</option>
+                      ))
+                    )}
+                  </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Percentage to Pay (%)
-                    {maxPaymentPercentage < 100 && (
-                      <span className="text-orange-600 ml-2">Max: {maxPaymentPercentage}%</span>
-                    )}
+                    Approved By <span className="text-red-500">*</span>
                   </label>
-                  <input
-                    type="number"
-                    value={paymentPercentage}
-                    onChange={(e) => {
-                      const newValue = Number(e.target.value);
-                      // Overpayment prevention
-                      if (newValue > maxPaymentPercentage) {
-                        alert(`Cannot pay more than ${maxPaymentPercentage.toFixed(1)}% (remaining balance)`);
-                        dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: maxPaymentPercentage } });
-                      } else {
-                        dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPercentage', value: newValue } });
-                      }
-                    }}
-                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${paymentPercentage > maxPaymentPercentage ? 'border-red-500' : 'border-gray-300'
+                  <select
+                    value={approvedBy}
+                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'approvedBy', value: e.target.value } })}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${!approvedBy ? 'border-red-300' : 'border-gray-300'
                       }`}
-                    placeholder="100"
-                    min="1"
-                    max={maxPaymentPercentage}
-                  />
-                  {paymentPercentage > maxPaymentPercentage && (
-                    <p className="text-red-600 text-sm mt-1">
-                      ⚠️ Exceeds remaining balance! Max allowed: {maxPaymentPercentage}%
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Payment Mode</label>
-                  <select
-                    value={paymentMode}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentMode', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
                   >
-                    <option value="">Select a mode</option>
-                    {validationData.paymentModes.length > 0 ? (
-                      validationData.paymentModes.map((opt, index) => (
-                        <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                    <option value="">Select a signatory</option>
+                    {validationData.signatories.length > 0 ? (
+                      validationData.signatories.map((sig, index) => (
+                        <option key={sig.id || index} value={sig.value}>{sig.value}</option>
                       ))
                     ) : (
-                      // Fallback to constants if no dynamic data
-                      PAYMENT_MODES.map(mode => (
-                        <option key={mode} value={mode}>{mode}</option>
+                      SIGNATORIES.map(sig => (
+                        <option key={sig.value} value={sig.value}>{sig.label}</option>
                       ))
                     )}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Bank</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Authorized By <span className="text-red-500">*</span>
+                  </label>
                   <select
-                    value={bank}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'bank', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                    value={authorizedBy}
+                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'authorizedBy', value: e.target.value } })}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${!authorizedBy ? 'border-red-300' : 'border-gray-300'
+                      }`}
                   >
-                    <option value="">Select a bank</option>
-                    {validationData.banks.length > 0 ? (
-                      validationData.banks.map((opt, index) => (
-                        <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                    <option value="">Select a signatory</option>
+                    {validationData.signatories.length > 0 ? (
+                      validationData.signatories.map((sig, index) => (
+                        <option key={sig.id || index} value={sig.value}>{sig.value}</option>
                       ))
                     ) : (
-                      <option value="" disabled>No banks available</option>
-                    )}
-                  </select>
-                </div>
-                {/* MOMO Charge Rate - Always visible for user to set/view */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">MoMo Charge Rate (%)</label>
-                  <input
-                    type="number"
-                    value={state.customMomoRate !== undefined ? (state.customMomoRate * 100) : ((globalRates.momoRate || 0.01) * 100)}
-                    onChange={(e) => {
-                      // Update momoRate in the calculation context
-                      const newRate = Number(e.target.value) / 100;
-                      dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'customMomoRate', value: newRate } });
-                    }}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    placeholder="1"
-                    min="0"
-                    step="0.1"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">Applies when Payment Mode is MOMO</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Tax Type</label>
-                  <select
-                    value={taxType}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'taxType', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  >
-                    <option value="">Select a tax type</option>
-                    {validationData.taxTypes.length > 0 ? (
-                      validationData.taxTypes.map((opt, index) => (
-                        <option key={opt.id || index} value={opt.value}>{opt.value}</option>
-                      ))
-                    ) : (
-                      // Fallback
-                      TAX_TYPES.map(type => (
-                        <option key={type} value={type}>{type}</option>
+                      SIGNATORIES.map(sig => (
+                        <option key={sig.value} value={sig.value}>{sig.label}</option>
                       ))
                     )}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Procurement Type</label>
-                  <select
-                    value={procurementType}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'procurementType', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  >
-                    <option value="">Select a type</option>
-                    {validationData.procurementTypes.length > 0 ? (
-                      validationData.procurementTypes.map((opt, index) => (
-                        <option key={opt.id || index} value={opt.value}>{opt.value}</option>
-                      ))
-                    ) : (
-                      // Fallback
-                      PROCUREMENT_TYPES.map(type => (
-                        <option key={type} value={type}>{type}</option>
-                      ))
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">FX Rate</label>
-                  <input
-                    type="number"
-                    value={fxRate}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'fxRate', value: Number(e.target.value) } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                    placeholder="0"
-                    step="0.01"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">VAT (Yes/No)</label>
-                  <select
-                    value={vatDecision}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'vatDecision', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  >
-                    {VAT_OPTIONS.map(option => (
-                      <option key={option} value={option}>{option}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Budget Line</label>
-                  <select
-                    value={budgetLine}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'budgetLine', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  >
-                    <option value="">Select a budget line</option>
-                    {validationData.budgetLines.length > 0 ? (
-                      validationData.budgetLines.map((opt, index) => (
-                        <option key={opt.id || index} value={opt.value}>
-                          {opt.value} {opt.description ? `- ${opt.description}` : ''}
-                        </option>
-                      ))
-                    ) : (
-                      <option value="" disabled>No budget lines available</option>
-                    )}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Transaction Currency</label>
-                  <select
-                    value={currency}
-                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'currency', value: e.target.value } })}
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-                  >
-                    <option value="GHS">GHS</option>
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
                   </select>
                 </div>
               </div>
 
-              {/* Calculated Values Display */}
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
-                <h5 className="text-lg font-semibold text-gray-700 mb-4">Calculated Values</h5>
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600">WHT Amount</label>
-                    <p className="text-lg font-semibold text-gray-900">₵ {whtAmount.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600">Levy Amount</label>
-                    <p className="text-lg font-semibold text-gray-900">₵ {levyAmount.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600">VAT Amount</label>
-                    <p className="text-lg font-semibold text-gray-900">₵ {vatAmount.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600">MoMo Charge</label>
-                    <p className="text-lg font-semibold text-gray-900">₵ {momoCharge.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-600">Net Payable</label>
-                    <p className="text-lg font-semibold text-gray-900">₵ {amountThisTransaction.toFixed(2)}</p>
-                  </div>
+              {/* Additional Approval Options */}
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Prepared By</label>
+                  <select
+                    value={preparedBy}
+                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'preparedBy', value: e.target.value } })}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    <option value="">Select prepared by</option>
+                    {validationData.signatories.length > 0 ? (
+                      validationData.signatories.map((sig, index) => (
+                        <option key={sig.id || index} value={sig.value}>{sig.value}</option>
+                      ))
+                    ) : (
+                      SIGNATORIES.map(sig => (
+                        <option key={sig.value} value={sig.value}>{sig.label}</option>
+                      ))
+                    )}
+                  </select>
                 </div>
-                <div className="mt-4">
-                  <label className="block text-sm font-medium text-gray-600">Budget Impact (USD)</label>
-                  <p className="text-lg font-semibold text-gray-900">$ {budgetImpactUSD.toFixed(2)}</p>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Payment Priority</label>
+                  <select
+                    value={paymentPriority}
+                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPriority', value: e.target.value } })}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  >
+                    <option value="">Select priority</option>
+                    {validationData.paymentPriorities.length > 0 ? (
+                      validationData.paymentPriorities.map((opt, index) => (
+                        <option key={opt.id || index} value={opt.value}>{opt.value}</option>
+                      ))
+                    ) : (
+                      PAYMENT_PRIORITIES.map(priority => (
+                        <option key={priority.value} value={priority.value}>{priority.label}</option>
+                      ))
+                    )}
+                  </select>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="mt-6 flex justify-end space-x-3">
-                <button
-                  onClick={handleClearReset}
-                  className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
-                >
-                  Clear & Reset
-                </button>
-                <button
-                  onClick={handleGenerateDocuments}
-                  className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors flex items-center font-semibold shadow-md"
-                >
-                  <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              {/* Approval Notes */}
+              <div className="mt-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Approval Notes</label>
+                <textarea
+                  value={approvalNotes}
+                  onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'approvalNotes', value: e.target.value } })}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+                  rows="3"
+                  placeholder="Add any special notes or instructions for approval..."
+                ></textarea>
+              </div>
+            </div>
+          </div>
+
+          {/* Support Documents Section */}
+          <div className="lg:col-span-3">
+            <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="text-lg font-semibold text-gray-700">Support Documents</h4>
+                <label className="cursor-pointer px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-2 font-medium">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
                   </svg>
-                  Generate Payment Documents
-                </button>
+                  Add Document
+                  <input
+                    type="file"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files);
+                      files.forEach(file => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          dispatch({
+                            type: actionTypes.ADD_SUPPORT_DOCUMENT,
+                            payload: {
+                              file,
+                              name: file.name,
+                              type: file.type,
+                              preview: file.type.startsWith('image/') ? reader.result : null
+                            }
+                          });
+                        };
+                        reader.readAsDataURL(file);
+                      });
+                      e.target.value = ''; // Reset input
+                    }}
+                  />
+                </label>
               </div>
-            </div>
-          )}
-        </div>
-      </div>
 
-      {/* Approval Selection Options - Full Width */}
-      <div className="lg:col-span-3">
-        <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-          <h4 className="text-lg font-semibold text-gray-700 mb-4">Approval Selection</h4>
-
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-            <p className="text-sm text-blue-800">
-              <span className="font-medium">Required Fields:</span> Checked By, Approved By, and Authorized By must be selected before staging a payment.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Checked By <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={checkedBy}
-                onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'checkedBy', value: e.target.value } })}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${!checkedBy ? 'border-red-300' : 'border-gray-300'
-                  }`}
-              >
-                <option value="">Select a signatory</option>
-                {validationData.signatories.length > 0 ? (
-                  validationData.signatories.map((sig, index) => (
-                    <option key={sig.id || index} value={sig.value}>{sig.value}</option>
-                  ))
-                ) : (
-                  SIGNATORIES.map(sig => (
-                    <option key={sig.value} value={sig.value}>{sig.label}</option>
-                  ))
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Approved By <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={approvedBy}
-                onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'approvedBy', value: e.target.value } })}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${!approvedBy ? 'border-red-300' : 'border-gray-300'
-                  }`}
-              >
-                <option value="">Select a signatory</option>
-                {validationData.signatories.length > 0 ? (
-                  validationData.signatories.map((sig, index) => (
-                    <option key={sig.id || index} value={sig.value}>{sig.value}</option>
-                  ))
-                ) : (
-                  SIGNATORIES.map(sig => (
-                    <option key={sig.value} value={sig.value}>{sig.label}</option>
-                  ))
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Authorized By <span className="text-red-500">*</span>
-              </label>
-              <select
-                value={authorizedBy}
-                onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'authorizedBy', value: e.target.value } })}
-                className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${!authorizedBy ? 'border-red-300' : 'border-gray-300'
-                  }`}
-              >
-                <option value="">Select a signatory</option>
-                {validationData.signatories.length > 0 ? (
-                  validationData.signatories.map((sig, index) => (
-                    <option key={sig.id || index} value={sig.value}>{sig.value}</option>
-                  ))
-                ) : (
-                  SIGNATORIES.map(sig => (
-                    <option key={sig.value} value={sig.value}>{sig.label}</option>
-                  ))
-                )}
-              </select>
-            </div>
-          </div>
-
-          {/* Additional Approval Options */}
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Prepared By</label>
-              <select
-                value={preparedBy}
-                onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'preparedBy', value: e.target.value } })}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-              >
-                <option value="">Select prepared by</option>
-                {validationData.signatories.length > 0 ? (
-                  validationData.signatories.map((sig, index) => (
-                    <option key={sig.id || index} value={sig.value}>{sig.value}</option>
-                  ))
-                ) : (
-                  SIGNATORIES.map(sig => (
-                    <option key={sig.value} value={sig.value}>{sig.label}</option>
-                  ))
-                )}
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Payment Priority</label>
-              <select
-                value={paymentPriority}
-                onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'paymentPriority', value: e.target.value } })}
-                className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-              >
-                <option value="">Select priority</option>
-                {validationData.paymentPriorities.length > 0 ? (
-                  validationData.paymentPriorities.map((opt, index) => (
-                    <option key={opt.id || index} value={opt.value}>{opt.value}</option>
-                  ))
-                ) : (
-                  PAYMENT_PRIORITIES.map(priority => (
-                    <option key={priority.value} value={priority.value}>{priority.label}</option>
-                  ))
-                )}
-              </select>
-            </div>
-          </div>
-
-          {/* Approval Notes */}
-          <div className="mt-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Approval Notes</label>
-            <textarea
-              value={approvalNotes}
-              onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'approvalNotes', value: e.target.value } })}
-              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
-              rows="3"
-              placeholder="Add any special notes or instructions for approval..."
-            ></textarea>
-          </div>
-        </div>
-      </div>
-
-      {/* Support Documents Section */}
-      <div className="lg:col-span-3">
-        <div className="bg-white rounded-lg p-6 border border-gray-200 shadow-sm">
-          <div className="flex justify-between items-center mb-4">
-            <h4 className="text-lg font-semibold text-gray-700">Support Documents</h4>
-            <label className="cursor-pointer px-4 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-2 font-medium">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" />
-              </svg>
-              Add Document
-              <input
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  const files = Array.from(e.target.files);
-                  files.forEach(file => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => {
-                      dispatch({
-                        type: actionTypes.ADD_SUPPORT_DOCUMENT,
-                        payload: {
-                          file,
-                          name: file.name,
-                          type: file.type,
-                          preview: file.type.startsWith('image/') ? reader.result : null
+              {state.supportDocuments && state.supportDocuments.length > 0 ? (
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                  {state.supportDocuments.map((doc, index) => (
+                    <div
+                      key={index}
+                      draggable
+                      onDragStart={(e) => {
+                        e.dataTransfer.setData('text/plain', index);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault(); // Necessary to allow dropping
+                        e.dataTransfer.dropEffect = 'move';
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+                        if (fromIndex !== index) {
+                          dispatch({
+                            type: actionTypes.REORDER_SUPPORT_DOCUMENTS,
+                            payload: { fromIndex, toIndex: index }
+                          });
                         }
-                      });
-                    };
-                    reader.readAsDataURL(file);
-                  });
-                  e.target.value = ''; // Reset input
-                }}
-              />
-            </label>
+                      }}
+                      className="relative group bg-gray-50 rounded-lg border border-gray-200 p-2 flex flex-col items-center cursor-move hover:shadow-md transition-shadow duration-200"
+                    >
+                      {/* Preview / Icon */}
+                      <div className="w-full h-24 mb-2 bg-white rounded border border-gray-100 flex items-center justify-center overflow-hidden">
+                        {doc.type.startsWith('image/') && doc.preview ? (
+                          <img src={doc.preview} alt={doc.name} className="w-full h-full object-cover" />
+                        ) : doc.type === 'application/pdf' ? (
+                          <PDFThumbnail file={doc.file} />
+                        ) : (
+                          <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                        )}
+                      </div>
+
+                      {/* Filename */}
+                      <p className="text-xs text-gray-600 text-center truncate w-full mb-2" title={doc.name}>
+                        {doc.name}
+                      </p>
+
+                      {/* Remove Button */}
+                      <button
+                        onClick={() => dispatch({ type: actionTypes.REMOVE_SUPPORT_DOCUMENT, payload: index })}
+                        className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md border border-gray-200 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
+                        title="Remove document"
+                      >
+                        <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
+                  <p className="text-gray-500 text-sm">No support documents added yet.</p>
+                  <p className="text-gray-400 text-xs mt-1">Upload files to attach them to the payment voucher.</p>
+                </div>
+              )}
+            </div>
           </div>
 
-          {state.supportDocuments && state.supportDocuments.length > 0 ? (
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {state.supportDocuments.map((doc, index) => (
-                <div
-                  key={index}
-                  draggable
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData('text/plain', index);
-                    e.dataTransfer.effectAllowed = 'move';
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault(); // Necessary to allow dropping
-                    e.dataTransfer.dropEffect = 'move';
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
-                    if (fromIndex !== index) {
-                      dispatch({
-                        type: actionTypes.REORDER_SUPPORT_DOCUMENTS,
-                        payload: { fromIndex, toIndex: index }
-                      });
-                    }
-                  }}
-                  className="relative group bg-gray-50 rounded-lg border border-gray-200 p-2 flex flex-col items-center cursor-move hover:shadow-md transition-shadow duration-200"
-                >
-                  {/* Preview / Icon */}
-                  <div className="w-full h-24 mb-2 bg-white rounded border border-gray-100 flex items-center justify-center overflow-hidden">
-                    {doc.type.startsWith('image/') && doc.preview ? (
-                      <img src={doc.preview} alt={doc.name} className="w-full h-full object-cover" />
-                    ) : doc.type === 'application/pdf' ? (
-                      <PDFThumbnail file={doc.file} />
-                    ) : (
-                      <svg className="w-10 h-10 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                    )}
-                  </div>
+          <ProcessingStatusModal
+            isOpen={isProcessing}
+            steps={PROCESSING_STEPS}
+            currentStep={processingStep}
+            error={processingError}
+            onClose={() => setIsProcessing(false)}
+          />
 
-                  {/* Filename */}
-                  <p className="text-xs text-gray-600 text-center truncate w-full mb-2" title={doc.name}>
-                    {doc.name}
-                  </p>
-
-                  {/* Remove Button */}
-                  <button
-                    onClick={() => dispatch({ type: actionTypes.REMOVE_SUPPORT_DOCUMENT, payload: index })}
-                    className="absolute -top-2 -right-2 bg-white rounded-full p-1 shadow-md border border-gray-200 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50"
-                    title="Remove document"
-                  >
-                    <svg className="w-4 h-4 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-            </div>
+          {/* Document Preview Modal */}
+          <DocumentPreviewModal
+            isOpen={isPreviewOpen}
+            onClose={() => setIsPreviewOpen(false)}
+            pdfUrl={previewUrl}
+            blob={generatedBlob}
+            paymentId={availablePayments[selectedAvailable]?.id}
+            vendorName={vendor}
+          />
+        </> /* End of SS Mode Fragment */
+      ) : (
+        /* ========== BATCH FINALIZE MODE ========== */
+        <div className="bg-white rounded-lg shadow-lg border border-purple-200 p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-purple-800">Batch Finalize Mode</h2>
+            <span className="text-sm text-purple-600 bg-purple-100 px-3 py-1 rounded-full">
+              {sheetName || 'Select Weekly Sheet'}
+            </span>
+          </div>
+          {sheetName ? (
+            <PaymentStaging
+              db={db}
+              appId={appId}
+              userId={userId}
+              weeklySheetId={sheetName}
+              onClose={() => setMode('SS')}
+              payments={localAvailablePayments.map((p, idx) => ({ ...p, originalSheetRow: idx + 1 }))}
+            />
           ) : (
-            <div className="text-center py-8 bg-gray-50 rounded-lg border-2 border-dashed border-gray-200">
-              <p className="text-gray-500 text-sm">No support documents added yet.</p>
-              <p className="text-gray-400 text-xs mt-1">Upload files to attach them to the payment voucher.</p>
+            <div className="text-center py-12 border-2 border-dashed border-purple-300 rounded-lg">
+              <p className="text-purple-600 font-medium">Please select a Weekly Sheet first</p>
+              <p className="text-sm text-purple-400 mt-2">Load payments from the dropdown in SS mode, then switch to BF mode</p>
             </div>
           )}
         </div>
-      </div>
-
-      <ProcessingStatusModal
-        isOpen={isProcessing}
-        steps={PROCESSING_STEPS}
-        currentStep={processingStep}
-        error={processingError}
-        onClose={() => setIsProcessing(false)}
-      />
-
-      {/* Document Preview Modal */}
-      <DocumentPreviewModal
-        isOpen={isPreviewOpen}
-        onClose={() => setIsPreviewOpen(false)}
-        pdfUrl={previewUrl}
-        blob={generatedBlob}
-        paymentId={availablePayments[selectedAvailable]?.id}
-        vendorName={vendor}
-      />
+      )}
     </div>
   );
 };

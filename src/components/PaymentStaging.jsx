@@ -18,6 +18,7 @@ import { calculateTotalTaxes } from '../services/FinancialEngine.js';
 import { VoucherBalanceService } from '../services/VoucherBalanceService';
 import { PaymentFinalizationService } from '../services/PaymentFinalizationService';
 import ProcessingStatusModal from './ProcessingStatusModal';
+import { BatchScheduleService } from '../services/BatchScheduleService'; // VBA-style schedule layouts
 
 function safeToFixed(val, digits = 2) {
   if (val === null || val === undefined) {
@@ -44,6 +45,10 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingStep, setProcessingStep] = useState('VALIDATING');
   const [processingError, setProcessingError] = useState(null);
+
+  // VBA-style schedule layout selection
+  const [selectedLayout, setSelectedLayout] = useState('AUTO');
+  const [generatingSchedule, setGeneratingSchedule] = useState(false);
 
   const PROCESSING_STEPS = [
     { id: 'VALIDATING', label: 'Validating Payments' },
@@ -298,8 +303,8 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
           try {
             // Get effective WHT rate (with fallback)
             const whtRate = await WHTEnhancedService.getEffectiveWHTRate(
-              db, 
-              appId, 
+              db,
+              appId,
               paymentData.procurementType || 'DEFAULT'
             );
 
@@ -1888,6 +1893,64 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
                         <FileText size={16} />
                         <span>Generate Voucher ({selectedPayments.length})</span>
                       </button>
+                    )}
+
+                    {/* VBA-Style Batch Schedule Generator */}
+                    {selectedPayments.length > 0 && (
+                      <div className="flex items-center space-x-2 ml-2 border-l border-gray-300 pl-2">
+                        <select
+                          value={selectedLayout}
+                          onChange={(e) => setSelectedLayout(e.target.value)}
+                          className="px-2 py-2 border border-purple-300 rounded-md text-sm bg-purple-50 focus:ring-2 focus:ring-purple-500"
+                        >
+                          {BatchScheduleService.getScheduleTypes().map(type => (
+                            <option key={type.value} value={type.value}>{type.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={async () => {
+                            if (selectedPayments.length === 0) {
+                              alert('Please select at least one payment.');
+                              return;
+                            }
+                            setGeneratingSchedule(true);
+                            try {
+                              const selectedData = stagedPayments.filter(p => selectedPayments.includes(p.id));
+                              // Build budget data map from payments
+                              const budgetDataMap = {};
+                              selectedData.forEach(p => {
+                                const bl = p.budgetLine || p.budgetItem || 'Unknown';
+                                if (!budgetDataMap[bl] && p.budgetData) {
+                                  budgetDataMap[bl] = p.budgetData;
+                                }
+                              });
+                              const blob = await BatchScheduleService.generateBatchSchedulePDF(selectedData, selectedLayout, budgetDataMap);
+                              const url = URL.createObjectURL(blob);
+                              window.open(url, '_blank');
+                              setTimeout(() => URL.revokeObjectURL(url), 60000);
+                            } catch (error) {
+                              console.error('[PaymentStaging] Batch schedule generation failed:', error);
+                              alert('Failed to generate batch schedule: ' + error.message);
+                            } finally {
+                              setGeneratingSchedule(false);
+                            }
+                          }}
+                          disabled={generatingSchedule}
+                          className={`px-4 py-2 text-white rounded-md flex items-center space-x-2 ${generatingSchedule ? 'bg-purple-400 cursor-not-allowed' : 'bg-purple-600 hover:bg-purple-700'}`}
+                        >
+                          {generatingSchedule ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                              <span>Generating...</span>
+                            </>
+                          ) : (
+                            <>
+                              <FileText size={16} />
+                              <span>VBA Schedule</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
                     )}
 
                   </div>
