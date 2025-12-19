@@ -49,6 +49,8 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
   // VBA-style schedule layout selection
   const [selectedLayout, setSelectedLayout] = useState('AUTO');
   const [generatingSchedule, setGeneratingSchedule] = useState(false);
+  const [showSchedulePreview, setShowSchedulePreview] = useState(false);
+  const [schedulePreviewUrl, setSchedulePreviewUrl] = useState(null);
 
   const PROCESSING_STEPS = [
     { id: 'VALIDATING', label: 'Validating Payments' },
@@ -1895,7 +1897,7 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
                       </button>
                     )}
 
-                    {/* VBA-Style Batch Schedule Generator */}
+                    {/* VBA-Style Batch Schedule Generator - Opens Preview Modal */}
                     {selectedPayments.length > 0 && (
                       <div className="flex items-center space-x-2 ml-2 border-l border-gray-300 pl-2">
                         <select
@@ -1926,8 +1928,9 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
                               });
                               const blob = await BatchScheduleService.generateBatchSchedulePDF(selectedData, selectedLayout, budgetDataMap);
                               const url = URL.createObjectURL(blob);
-                              window.open(url, '_blank');
-                              setTimeout(() => URL.revokeObjectURL(url), 60000);
+                              // Store URL and show preview modal
+                              setSchedulePreviewUrl(url);
+                              setShowSchedulePreview(true);
                             } catch (error) {
                               console.error('[PaymentStaging] Batch schedule generation failed:', error);
                               alert('Failed to generate batch schedule: ' + error.message);
@@ -2041,6 +2044,73 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
       </div>
 
       {showVoucherPreview && renderVoucherPreview()}
+
+      {/* VBA Schedule Preview Modal */}
+      {showSchedulePreview && schedulePreviewUrl && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl w-11/12 h-5/6 max-w-6xl flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-4 border-b">
+              <h2 className="text-xl font-bold text-gray-800">VBA Schedule Preview</h2>
+              <button
+                onClick={() => {
+                  setShowSchedulePreview(false);
+                  URL.revokeObjectURL(schedulePreviewUrl);
+                  setSchedulePreviewUrl(null);
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <XCircle size={24} />
+              </button>
+            </div>
+
+            {/* PDF Preview */}
+            <div className="flex-1 p-2 overflow-hidden">
+              <iframe
+                src={schedulePreviewUrl}
+                className="w-full h-full border rounded"
+                title="VBA Schedule Preview"
+              />
+            </div>
+
+            {/* Footer with Actions */}
+            <div className="flex items-center justify-end space-x-3 p-4 border-t bg-gray-50">
+              <button
+                onClick={() => {
+                  setShowSchedulePreview(false);
+                  URL.revokeObjectURL(schedulePreviewUrl);
+                  setSchedulePreviewUrl(null);
+                }}
+                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600"
+              >
+                Go Back & Edit
+              </button>
+              <button
+                onClick={() => {
+                  // Open PDF in new tab for printing/saving
+                  window.open(schedulePreviewUrl, '_blank');
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 flex items-center space-x-2"
+              >
+                <FileText size={16} />
+                <span>Open PDF</span>
+              </button>
+              <button
+                onClick={() => {
+                  // Proceed with finalization
+                  setShowSchedulePreview(false);
+                  setShowVoucherPreview(true);
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 flex items-center space-x-2"
+              >
+                <CreditCard size={16} />
+                <span>Finalize & Generate PDF</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <ProcessingStatusModal
         isOpen={finalizing || processingStep !== 'VALIDATING' && processingStep !== 'COMPLETED'}
         steps={PROCESSING_STEPS}
