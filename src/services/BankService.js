@@ -375,6 +375,281 @@ export class BankService {
             };
         }
     }
+
+    /**
+     * Generate Excel Template for bank import
+     * @returns {Object} Success/error result
+     */
+    static generateExcelTemplate() {
+        try {
+            // Dynamic import XLSX
+            import('xlsx').then(XLSX => {
+                const workbook = XLSX.utils.book_new();
+
+                const templateData = [
+                    ['BANK IMPORT TEMPLATE'],
+                    ['Fill in data starting from row 4. Do not modify column headers.'],
+                    [],
+                    ['Bank Name', 'Account Number', 'Currency', 'Initial Balance', 'Account Type'],
+                    ['GT Bank - Operations', '1234567890', 'GHS', '50000', 'Checking'],
+                    ['', '', '', '', '']
+                ];
+
+                const worksheet = XLSX.utils.aoa_to_sheet(templateData);
+
+                worksheet['!cols'] = [
+                    { wch: 30 }, // Bank Name
+                    { wch: 18 }, // Account Number
+                    { wch: 10 }, // Currency
+                    { wch: 15 }, // Initial Balance
+                    { wch: 15 }  // Account Type
+                ];
+
+                XLSX.utils.book_append_sheet(workbook, worksheet, 'Bank Import');
+                XLSX.writeFile(workbook, `Bank_Import_Template_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+                console.log('[BankService] Bank template downloaded successfully');
+            });
+
+            return { success: true };
+        } catch (error) {
+            console.error('[BankService] Error generating template:', error);
+            return { success: false, error: error.message };
+        }
+    }
+
+    /**
+     * Parse Import File for banks
+     * @param {File} file - Excel file to parse
+     * @returns {Promise<Object>} Parsed banks with validation results
+     */
+    static async parseImportFile(file) {
+        return new Promise((resolve) => {
+            import('xlsx').then(XLSX => {
+                const reader = new FileReader();
+
+                reader.onload = (e) => {
+                    try {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: 'array' });
+
+                        const sheetName = workbook.SheetNames[0];
+                        const worksheet = workbook.Sheets[sheetName];
+                        const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                        console.log('[BankService] Raw import data:', rawData);
+
+                        // Find header row
+                        let headerRowIndex = -1;
+                        for (let i = 0; i < Math.min(10, rawData.length); i++) {
+                            if (rawData[i] && rawData[i][0] &&
+                                rawData[i][0].toString().toLowerCase().includes('bank name')) {
+                                headerRowIndex = i;
+                                break;
+                            }
+                        }
+
+                        if (headerRowIndex === -1) {
+                            resolve({
+                                success: false,
+                                error: 'Could not find header row. Make sure "Bank Name" is in the first column.',
+                                banks: [],
+                                summary: { totalRows: 0, validBanks: 0, errors: ['Header row not found'] }
+                            });
+                            return;
+                        }
+
+                        const banks = [];
+                        const errors = [];
+                        const validCurrencies = ['GHS', 'USD', 'EUR', 'GBP'];
+                        const validTypes = ['Checking', 'Savings', 'Petty Cash', 'Money Market', 'Other'];
+
+                        for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+                            const row = rawData[i];
+
+                            if (!row || !row[0] || row[0].toString().trim() === '') {
+                                continue;
+                            }
+
+                            const bankName = row[0]?.toString().trim() || '';
+                            const accountNumber = row[1]?.toString().trim() || '';
+                            let currency = row[2]?.toString().trim().toUpperCase() || 'GHS';
+                            const initialBalance = parseFloat(row[3]) || 0;
+                            let accountType = row[4]?.toString().trim() || 'Checking';
+
+                            // Validate and normalize currency
+                            if (!validCurrencies.includes(currency)) {
+                                currency = 'GHS';
+                            }
+
+                            // Validate and normalize account type
+                            if (!validTypes.includes(accountType)) {
+                                accountType = 'Checking';
+                            }
+
+                            // Validation
+                            const rowErrors = [];
+                            if (!bankName) rowErrors.push('Bank name is required');
+                            if (!accountNumber) rowErrors.push('Account number is required');
+
+                            if (rowErrors.length > 0) {
+                                errors.push({
+                                    row: i + 1,
+                                    bankName: bankName || '(empty)',
+                                    errors: rowErrors
+                                });
+                                continue;
+                            }
+
+                            banks.push({
+                                name: bankName,
+                                accountNumber: accountNumber,
+                                currency: currency,
+                                balance: initialBalance,
+                                bankType: accountType,
+                                status: 'active'
+                            });
+                        }
+
+                        console.log('[BankService] Parsed banks:', banks.length);
+
+                        resolve({
+                            success: true,
+                            banks: banks,
+                            summary: {
+                                totalRows: rawData.length - headerRowIndex - 1,
+                                validBanks: banks.length,
+                                invalidRows: errors.length,
+                                errors: errors
+                            }
+                        });
+
+                    } catch (parseError) {
+                        console.error('[BankService] Parse error:', parseError);
+                        resolve({
+                            success: false,
+                            error: `Failed to parse file: ${parseError.message}`,
+                            banks: [],
+                            summary: { totalRows: 0, validBanks: 0, errors: [parseError.message] }
+                        });
+                    }
+                };
+
+                reader.onerror = () => {
+                    resolve({
+                        success: false,
+                        error: 'Failed to read file',
+                        banks: [],
+                        summary: { totalRows: 0, validBanks: 0, errors: ['File read error'] }
+                    });
+                };
+
+                reader.readAsArrayBuffer(file);
+            });
+        });
+    }
+
+    /**
+     * Bulk import banks to Firestore
+     * @param {Object} db - Firestore database instance
+     * @param {string} appId - Application ID
+     * @param {Array} banks - Array of bank objects to import
+     * @param {string} userId - User ID for audit
+     * @returns {Promise<Object>} Import results
+     */
+    static async importBanks(db, appId, banks, userId = 'system') {
+        try {
+            console.log(`[BankService] Importing ${banks.length} banks to Firestore...`);
+
+            const banksRef = collection(db, `artifacts/${appId}/public/data/banks`);
+            const results = {
+                success: true,
+                imported: 0,
+                failed: 0,
+                errors: []
+            };
+
+            for (const bank of banks) {
+                try {
+                    await addDoc(banksRef, {
+                        ...bank,
+                        createdAt: serverTimestamp(),
+                        createdBy: userId,
+                        lastUpdated: serverTimestamp(),
+                        importedAt: new Date().toISOString()
+                    });
+                    results.imported++;
+                } catch (error) {
+                    results.failed++;
+                    results.errors.push({
+                        bank: bank.name,
+                        error: error.message
+                    });
+                }
+            }
+
+            console.log(`[BankService] Import complete: ${results.imported} success, ${results.failed} failed`);
+            return results;
+
+        } catch (error) {
+            console.error('[BankService] Import error:', error);
+            return {
+                success: false,
+                imported: 0,
+                failed: banks.length,
+                errors: [{ bank: 'All', error: error.message }]
+            };
+        }
+    }
+
+    /**
+     * Export all banks to Excel
+     * @param {Object} db - Firestore database instance
+     * @param {string} appId - Application ID
+     * @returns {Promise<Object>} Export result
+     */
+    static async exportBanks(db, appId) {
+        try {
+            const banks = await this.getAllBanks(db, appId);
+
+            if (banks.length === 0) {
+                return { success: false, error: 'No banks to export' };
+            }
+
+            const XLSX = await import('xlsx');
+            const workbook = XLSX.utils.book_new();
+
+            const exportData = [
+                ['BANK EXPORT'],
+                [`Generated: ${new Date().toLocaleString()}`],
+                [],
+                ['Bank Name', 'Account Number', 'Currency', 'Current Balance', 'Account Type', 'Status'],
+                ...banks.map(b => [
+                    b.name || '',
+                    b.accountNumber || '',
+                    b.currency || 'GHS',
+                    b.balance || 0,
+                    b.bankType || 'Checking',
+                    b.status || 'active'
+                ])
+            ];
+
+            const worksheet = XLSX.utils.aoa_to_sheet(exportData);
+
+            worksheet['!cols'] = [
+                { wch: 30 }, { wch: 18 }, { wch: 10 },
+                { wch: 18 }, { wch: 15 }, { wch: 10 }
+            ];
+
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Banks');
+            XLSX.writeFile(workbook, `Banks_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+            return { success: true, count: banks.length };
+        } catch (error) {
+            console.error('[BankService] Export error:', error);
+            return { success: false, error: error.message };
+        }
+    }
 }
 
 export default BankService;

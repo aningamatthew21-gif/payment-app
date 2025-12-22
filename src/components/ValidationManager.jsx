@@ -92,7 +92,7 @@ const VALIDATION_FIELDS = {
   },
   departments: {
     label: 'Departments',
-    description: 'Company departments',
+    description: 'Department dimensions from Budget Management system (auto-synced)',
     icon: '🏢',
     field: 'departments',
     hasRate: false
@@ -196,6 +196,9 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
 
         console.log('Budget lines found:', budgetQuerySnapshot.docs.length);
 
+        // Extract unique departments from budget lines
+        const uniqueDepts = new Set();
+
         budgetQuerySnapshot.forEach(doc => {
           const budgetLine = doc.data();
           if (budgetLine.name) {
@@ -210,24 +213,45 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
               deptCode: budgetLine.deptCode,
               deptDimension: budgetLine.deptDimension
             });
+
+            // Collect unique deptDimension values for departments
+            if (budgetLine.deptDimension) {
+              uniqueDepts.add(budgetLine.deptDimension);
+            }
           }
         });
+
+        // Populate departments from unique deptDimension values (single source of truth)
+        data.departments = Array.from(uniqueDepts).sort().map((dept, index) => ({
+          id: `dept_${index}`,
+          value: dept,
+          description: 'Auto-loaded from Budget Management',
+          rate: 0,
+          isActive: true,
+          autoLoaded: true
+        }));
+
+        console.log('Departments extracted from budget lines:', data.departments.length);
       } catch (budgetError) {
         console.error('Error loading budget lines:', budgetError);
       }
 
-      // Load vendors from VendorService
+      // Load vendors from VendorService (single source of truth)
       try {
         console.log('Loading vendors from VendorService...');
         const vendors = await VendorService.getAllVendors(db, appId);
-        data.vendors = vendors.map(v => ({
+        // Always use VendorService as the single source of truth (even if empty)
+        data.vendors = (vendors || []).map(v => ({
           id: v.id,
           value: v.name,
           description: v.banking?.bankName ? `${v.banking.bankName} - ${v.banking.accountNumber}` : '',
           isActive: v.status === 'active'
         }));
+        console.log('Vendors loaded from VendorService:', data.vendors.length);
       } catch (vendorError) {
         console.error('Error loading vendors:', vendorError);
+        // On error, keep empty array - don't fall back to validation collection
+        data.vendors = [];
       }
 
       // Load banks from BankService
@@ -827,6 +851,30 @@ const ValidationManager = ({ db, userId, appId, onClose }) => {
                     className="px-4 py-2 bg-emerald-600 text-white rounded-md hover:bg-emerald-700 transition-colors"
                   >
                     Go to Bank Management
+                  </button>
+                </div>
+              ) : activeFieldManager === 'departments' ? (
+                <div className="bg-purple-50 p-4 rounded-lg mb-6 border border-purple-200">
+                  <div className="flex items-center space-x-2 mb-3">
+                    <Info size={20} className="text-purple-600" />
+                    <h4 className="font-medium text-purple-900">Departments from Budget Management</h4>
+                  </div>
+                  <p className="text-sm text-purple-700 mb-3">
+                    Departments are automatically loaded from the Department Dimension field in your imported budget lines.
+                    To add or modify departments, please update your budget data in Budget Management.
+                  </p>
+                  <button
+                    onClick={() => {
+                      onClose();
+                      if (window.location.hash === '#budgetManagement') {
+                        window.location.reload();
+                      } else {
+                        window.location.hash = '#budgetManagement';
+                      }
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors"
+                  >
+                    Go to Budget Management
                   </button>
                 </div>
               ) : activeFieldManager === 'companySettings' ? (

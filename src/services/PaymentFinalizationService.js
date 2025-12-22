@@ -256,12 +256,27 @@ class PaymentFinalizationService {
       // Capture original budget balances
       for (const budgetLine of undoData.budgetLines) {
         try {
-          const budgetQuery = query(
+          // ✅ FIX: Extract raw budget line name from formatted display value
+          const rawBudgetName = budgetLine.includes(' - ')
+            ? budgetLine.split(' - ')[0].trim()
+            : budgetLine.trim();
+
+          let budgetQuery = query(
             collection(db, `artifacts/${appId}/public/data/budgetLines`),
-            where('name', '==', budgetLine)
+            where('name', '==', rawBudgetName)
           );
 
-          const budgetSnapshot = await getDocs(budgetQuery);
+          let budgetSnapshot = await getDocs(budgetQuery);
+
+          // Try exact match if raw name lookup fails
+          if (budgetSnapshot.empty && rawBudgetName !== budgetLine) {
+            budgetQuery = query(
+              collection(db, `artifacts/${appId}/public/data/budgetLines`),
+              where('name', '==', budgetLine)
+            );
+            budgetSnapshot = await getDocs(budgetQuery);
+          }
+
           if (!budgetSnapshot.empty) {
             const budgetDoc = budgetSnapshot.docs[0];
             const data = budgetDoc.data();
@@ -271,9 +286,9 @@ class PaymentFinalizationService {
               balCD: data.balCD || 0,
               budgetLineId: budgetDoc.id
             };
-            console.log(`[PaymentFinalizationService] ✓ Captured budget balance for: ${budgetLine}`);
+            console.log(`[PaymentFinalizationService] ✓ Captured budget balance for: ${rawBudgetName}`);
           } else {
-            console.warn(`[PaymentFinalizationService] Budget line not found: ${budgetLine}`);
+            console.warn(`[PaymentFinalizationService] Budget line not found: ${rawBudgetName} (from ${budgetLine})`);
           }
         } catch (error) {
           console.warn(`[PaymentFinalizationService] Could not capture budget balance for ${budgetLine}:`, error);
@@ -354,19 +369,40 @@ class PaymentFinalizationService {
         }
 
         try {
+          // ✅ FIX: Extract raw budget line name from formatted display value
+          // Format is typically: "Name - AccountNo - DeptCode - DeptDimension"
+          // We need just the "Name" portion to match the database field
+          const rawBudgetName = budgetLine.includes(' - ')
+            ? budgetLine.split(' - ')[0].trim()
+            : budgetLine.trim();
+
+          console.log(`[PaymentFinalizationService] Extracting raw budget name:`, {
+            original: budgetLine,
+            extracted: rawBudgetName
+          });
+
           // Find budget line document to get the ID
           const budgetLinesRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
-          const budgetQuery = query(budgetLinesRef, where('name', '==', budgetLine));
-          const budgetSnapshot = await getDocs(budgetQuery);
 
-          console.log(`[PaymentFinalizationService] Budget line search result for "${budgetLine}":`, {
+          // Try with extracted raw name first
+          let budgetQuery = query(budgetLinesRef, where('name', '==', rawBudgetName));
+          let budgetSnapshot = await getDocs(budgetQuery);
+
+          // If not found with raw name, try exact match (in case payment already has raw name)
+          if (budgetSnapshot.empty && rawBudgetName !== budgetLine) {
+            console.log(`[PaymentFinalizationService] Raw name lookup failed, trying exact match...`);
+            budgetQuery = query(budgetLinesRef, where('name', '==', budgetLine));
+            budgetSnapshot = await getDocs(budgetQuery);
+          }
+
+          console.log(`[PaymentFinalizationService] Budget line search result for "${rawBudgetName}":`, {
             found: !budgetSnapshot.empty,
             count: budgetSnapshot.docs.length,
             budgetLines: budgetSnapshot.docs.map(doc => doc.data().name)
           });
 
           if (budgetSnapshot.empty) {
-            console.warn(`[PaymentFinalizationService] Budget line ${budgetLine} not found for update`);
+            console.warn(`[PaymentFinalizationService] Budget line "${rawBudgetName}" (from "${budgetLine}") not found for update`);
             skippedUpdates.push({ paymentId: payment.id, budgetLine, reason: 'Budget line not found' });
             continue;
           }

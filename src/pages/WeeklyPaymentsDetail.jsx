@@ -148,6 +148,9 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
 
                 console.log('Budget lines found for WeeklyPaymentsDetail:', budgetQuerySnapshot.docs.length);
 
+                // Extract unique departments from budget lines
+                const uniqueDepts = new Set();
+
                 budgetQuerySnapshot.forEach(doc => {
                     const budgetLine = doc.data();
                     if (budgetLine.name) {
@@ -170,9 +173,26 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                             deptCode: budgetLine.deptCode || '',
                             deptDimension: budgetLine.deptDimension || ''
                         });
+
+                        // Collect unique deptDimension values for departments
+                        if (budgetLine.deptDimension) {
+                            uniqueDepts.add(budgetLine.deptDimension);
+                        }
+
                         console.log(`Added enhanced budget line: ${displayValue}`);
                     }
                 });
+
+                // Populate departments from unique deptDimension values (single source of truth)
+                data.departments = Array.from(uniqueDepts).sort().map((dept, index) => ({
+                    id: `dept_${index}`,
+                    value: dept,
+                    description: 'From Budget Management',
+                    isActive: true,
+                    autoLoaded: true
+                }));
+
+                console.log('Departments extracted from budget lines:', data.departments.length);
             } catch (budgetError) {
                 console.error('Error loading enhanced budget lines for WeeklyPaymentsDetail:', budgetError);
             }
@@ -210,25 +230,21 @@ const WeeklyPaymentsDetail = ({ db, userId, appId, onNavigate, onBack, onLogout,
                 console.log('Loading vendors from Vendor Management for WeeklyPaymentsDetail...');
                 const managedVendors = await VendorService.getAllVendors(db, appId);
 
-                if (managedVendors && managedVendors.length > 0) {
-                    console.log(`Found ${managedVendors.length} vendors from Vendor Management`);
+                // Always use VendorService as the single source of truth (even if empty)
+                data.vendors = (managedVendors || []).map(v => ({
+                    id: v.id,
+                    value: v.name,
+                    description: v.email || '',
+                    isActive: v.status === 'active',
+                    vendorId: v.id,
+                    banking: v.banking || null
+                }));
 
-                    // Replace validation collection vendors with Vendor Management vendors
-                    data.vendors = managedVendors.map(v => ({
-                        id: v.id,
-                        value: v.name,
-                        description: v.email || '',
-                        isActive: v.status === 'active',
-                        vendorId: v.id,
-                        banking: v.banking || null
-                    }));
-
-                    console.log('Vendors loaded from Vendor Management:', data.vendors.length);
-                } else {
-                    console.log('No vendors found in Vendor Management, existing validation vendors will be used');
-                }
+                console.log('Vendors loaded from Vendor Management:', data.vendors.length);
             } catch (vendorError) {
-                console.warn('Error loading vendors from Vendor Management, using validation collection:', vendorError);
+                console.warn('Error loading vendors from Vendor Management:', vendorError);
+                // On error, keep empty array - don't fall back to validation collection
+                data.vendors = [];
             }
 
             // BANK MANAGEMENT INTEGRATION: Load banks from BankService (single source of truth)

@@ -76,7 +76,33 @@ const BankDetailView = ({ bank, onBack, db, appId, userId }) => {
         let monthlyOutflow = 0;
 
         ledger.forEach(entry => {
-            const entryDate = new Date(entry.timestamp);
+            // ✅ FIX: Handle Firestore timestamp properly
+            // Firestore serverTimestamp() returns an object with seconds/nanoseconds
+            // or a toDate() method, not a direct Date string
+            let entryDate;
+            if (entry.timestamp?.toDate) {
+                // Firestore Timestamp object
+                entryDate = entry.timestamp.toDate();
+            } else if (entry.timestamp?.seconds) {
+                // Firestore timestamp in serialized form
+                entryDate = new Date(entry.timestamp.seconds * 1000);
+            } else if (entry.date) {
+                // Fallback to date string field if available
+                entryDate = new Date(entry.date);
+            } else if (entry.timestamp) {
+                // Try parsing as ISO string
+                entryDate = new Date(entry.timestamp);
+            } else {
+                console.warn('[BankDetailView] Entry missing timestamp:', entry);
+                return; // Skip entries without valid date
+            }
+
+            // Validate date
+            if (isNaN(entryDate.getTime())) {
+                console.warn('[BankDetailView] Invalid date for entry:', entry);
+                return;
+            }
+
             if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
                 if (entry.type === 'INFLOW') {
                     monthlyInflow += Math.abs(Number(entry.amount || 0));
@@ -86,6 +112,7 @@ const BankDetailView = ({ bank, onBack, db, appId, userId }) => {
             }
         });
 
+        console.log('[BankDetailView] Monthly stats calculated:', { monthlyInflow, monthlyOutflow, ledgerCount: ledger.length });
         return { monthlyInflow, monthlyOutflow };
     };
 

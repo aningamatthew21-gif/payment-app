@@ -19,7 +19,6 @@ import {
   TAX_TYPES,
   VAT_OPTIONS,
   SIGNATORIES,
-  DEPARTMENTS,
   PAYMENT_PRIORITIES
 } from '../config/constants';
 import { ProcurementTypesService } from '../services/ProcurementTypesService.js';
@@ -239,6 +238,10 @@ const PaymentGenerator = ({
         // Optimization: Limit budget lines as well
         const budgetQ = query(budgetRef, limit(500));
         const budgetQuerySnapshot = await getDocs(budgetQ);
+
+        // Extract unique departments from budget lines
+        const uniqueDepts = new Set();
+
         budgetQuerySnapshot.forEach(doc => {
           const budgetLine = doc.data();
           if (budgetLine.name) {
@@ -261,8 +264,24 @@ const PaymentGenerator = ({
               deptCode: budgetLine.deptCode || '',
               deptDimension: budgetLine.deptDimension || ''
             });
+
+            // Collect unique deptDimension values for departments
+            if (budgetLine.deptDimension) {
+              uniqueDepts.add(budgetLine.deptDimension);
+            }
           }
         });
+
+        // Populate departments from unique deptDimension values (single source of truth)
+        data.departments = Array.from(uniqueDepts).sort().map((dept, index) => ({
+          id: `dept_${index}`,
+          value: dept,
+          description: 'From Budget Management',
+          isActive: true,
+          autoLoaded: true
+        }));
+
+        console.log('[PaymentGenerator] Departments extracted from budget lines:', data.departments.length);
       } catch (budgetError) {
         console.error('Error loading budget lines:', budgetError);
       }
@@ -284,10 +303,11 @@ const PaymentGenerator = ({
         console.warn('Error loading procurement types:', whtError);
       }
 
-      // Load vendors from VendorService
+      // Load vendors from VendorService (single source of truth)
       try {
         const vendors = await VendorService.getAllVendors(db, appId);
-        data.vendors = vendors.map(v => ({
+        // Always use VendorService as the single source of truth (even if empty)
+        data.vendors = (vendors || []).map(v => ({
           id: v.id,
           value: v.name,
           description: v.banking?.bankName ? `${v.banking.bankName} - ${v.banking.accountNumber}` : '',
@@ -295,8 +315,11 @@ const PaymentGenerator = ({
           // Store full vendor object for later use
           fullObject: v
         }));
+        console.log('[PaymentGenerator] Vendors loaded from VendorService:', data.vendors.length);
       } catch (vendorError) {
         console.error('Error loading vendors:', vendorError);
+        // On error, keep empty array - don't fall back to validation collection
+        data.vendors = [];
       }
 
       // Load banks from BankService
@@ -1071,8 +1094,8 @@ const PaymentGenerator = ({
           <button
             onClick={() => setMode('SS')}
             className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${mode === 'SS'
-                ? 'bg-blue-600 text-white shadow-md'
-                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'
+              ? 'bg-blue-600 text-white shadow-md'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'
               }`}
           >
             Simple Single (SS)
@@ -1080,8 +1103,8 @@ const PaymentGenerator = ({
           <button
             onClick={() => setMode('BF')}
             className={`px-6 py-2.5 rounded-lg font-bold text-sm transition-all duration-200 ${mode === 'BF'
-                ? 'bg-purple-600 text-white shadow-md'
-                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'
+              ? 'bg-purple-600 text-white shadow-md'
+              : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'
               }`}
           >
             Batch Finalize (BF)

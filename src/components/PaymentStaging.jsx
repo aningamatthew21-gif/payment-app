@@ -195,21 +195,34 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
         console.log(`[PaymentStaging] Using existing budget line ID: ${budgetLineId}`);
       } else {
         // Method 2: Search for budget line by name in the database
-        console.log(`[PaymentStaging] No existing budget line ID, searching by name: ${budgetLine}`);
+        // ✅ FIX: Extract raw budget line name from formatted display value
+        // Format is typically: "Name - AccountNo - DeptCode - DeptDimension"
+        const rawBudgetName = budgetLine.includes(' - ')
+          ? budgetLine.split(' - ')[0].trim()
+          : budgetLine.trim();
+
+        console.log(`[PaymentStaging] Searching by name: "${rawBudgetName}" (from "${budgetLine}")`);
         try {
           const budgetLinesRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
-          const budgetLinesQuery = query(budgetLinesRef, where('name', '==', budgetLine));
-          const budgetLinesSnapshot = await getDocs(budgetLinesQuery);
+          let budgetLinesQuery = query(budgetLinesRef, where('name', '==', rawBudgetName));
+          let budgetLinesSnapshot = await getDocs(budgetLinesQuery);
+
+          // If not found with raw name, try exact match
+          if (budgetLinesSnapshot.empty && rawBudgetName !== budgetLine) {
+            console.log(`[PaymentStaging] Raw name lookup failed, trying exact match...`);
+            budgetLinesQuery = query(budgetLinesRef, where('name', '==', budgetLine));
+            budgetLinesSnapshot = await getDocs(budgetLinesQuery);
+          }
 
           if (!budgetLinesSnapshot.empty) {
             const budgetLineDoc = budgetLinesSnapshot.docs[0];
             budgetLineId = budgetLineDoc.id;
-            console.log(`[PaymentStaging] Found budget line by name: ${budgetLine} -> ID: ${budgetLineId}`);
+            console.log(`[PaymentStaging] Found budget line: "${rawBudgetName}" -> ID: ${budgetLineId}`);
           } else {
-            console.warn(`[PaymentStaging] No budget line found in database for name: ${budgetLine}`);
+            console.warn(`[PaymentStaging] No budget line found for: "${rawBudgetName}"`);
           }
         } catch (searchError) {
-          console.error(`[PaymentStaging] Error searching for budget line by name:`, searchError);
+          console.error(`[PaymentStaging] Error searching for budget line:`, searchError);
         }
       }
 
@@ -973,13 +986,17 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
       // Test budget line resolution for each payment
       for (const payment of selectedPaymentData) {
         const budgetLine = payment.budgetLine || payment.budgetItem || 'Unknown';
-        console.log(`\n[PaymentStaging] Testing budget line: ${budgetLine}`);
+        // ✅ FIX: Extract raw budget line name from formatted display value
+        const rawBudgetName = budgetLine.includes(' - ')
+          ? budgetLine.split(' - ')[0].trim()
+          : budgetLine.trim();
+        console.log(`\n[PaymentStaging] Testing budget line: "${rawBudgetName}" (from "${budgetLine}")`);
         console.log(`[PaymentStaging] Payment budget line ID: ${payment.budgetLineId}`);
 
         // Test database search
         try {
           const budgetLinesRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
-          const budgetLinesQuery = query(budgetLinesRef, where('name', '==', budgetLine));
+          const budgetLinesQuery = query(budgetLinesRef, where('name', '==', rawBudgetName));
           const budgetLinesSnapshot = await getDocs(budgetLinesQuery);
 
           if (!budgetLinesSnapshot.empty) {

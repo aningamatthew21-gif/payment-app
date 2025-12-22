@@ -1,69 +1,10 @@
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy } from 'firebase/firestore';
+import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, writeBatch } from 'firebase/firestore';
+import * as XLSX from 'xlsx';
 
-// Mock Data for initial development/fallback
-const MOCK_VENDORS = [
-    {
-        id: 'ven_001',
-        name: 'ACME CORP LTD',
-        email: 'finance@acmecorp.com',
-        status: 'active',
-        banking: {
-            bankName: 'GT Bank',
-            branchCode: '01',
-            accountName: 'ACME CORP OPERATIONS',
-            accountNumber: '144100223399'
-        }
-    },
-    {
-        id: 'ven_002',
-        name: 'DHL LOGISTICS GHANA',
-        email: 'billing@dhl.com.gh',
-        status: 'active',
-        banking: {
-            bankName: 'Ecobank',
-            branchCode: '05',
-            accountName: 'DHL LOGISTICS',
-            accountNumber: '0022114455'
-        }
-    },
-    {
-        id: 'ven_003',
-        name: 'Z-CONSTRUCTION WORKS',
-        email: 'accounts@z-const.com',
-        status: 'inactive',
-        banking: {
-            bankName: 'Fidelity Bank',
-            branchCode: '12',
-            accountName: 'Z-CONSTRUCTION',
-            accountNumber: '8885552211'
-        }
-    },
-    {
-        id: 'ven_004',
-        name: 'OFFICE SUPPLIES DEPOT',
-        email: 'sales@officesupplies.com',
-        status: 'active',
-        banking: {
-            bankName: 'Stanbic Bank',
-            branchCode: '03',
-            accountName: 'OFFICE SUPPLIES DEPOT LTD',
-            accountNumber: '9011223344'
-        }
-    },
-    {
-        id: 'ven_005',
-        name: 'CLEANING SERVICES PRO',
-        email: 'info@cleanpro.com',
-        status: 'active',
-        banking: {
-            bankName: 'Absa Bank',
-            branchCode: '08',
-            accountName: 'CLEANING SERVICES PRO',
-            accountNumber: '1122334455'
-        }
-    }
-];
-
+/**
+ * VendorService - Single source of truth for vendor data
+ * Manages vendor CRUD operations with Firestore
+ */
 export const VendorService = {
     // Get all vendors from Firestore Vendor Management collection
     getAllVendors: async (db, appId) => {
@@ -74,8 +15,6 @@ export const VendorService = {
             const snapshot = await getDocs(q);
             const vendors = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
             console.log(`[VendorService] Loaded ${vendors.length} vendors from Vendor Management`);
-
-            // If no vendors in Firestore yet, return empty array (not mock data)
             return vendors;
         } catch (error) {
             console.error("[VendorService] Error fetching vendors:", error);
@@ -118,39 +57,277 @@ export const VendorService = {
         }
     },
 
-    // Generate Excel Template
-    generateExcelTemplate: () => {
-        const headers = ['Vendor Name', 'Contact Email', 'Bank Name', 'Branch Code', 'Account Name', 'Account Number', 'Status'];
-        const csvContent = "data:text/csv;charset=utf-8," + headers.join(",");
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", "vendor_import_template.csv");
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    // Delete a vendor from Firestore
+    deleteVendor: async (db, appId, vendorId) => {
+        try {
+            console.log("[VendorService] Deleting vendor:", vendorId);
+            const vendorRef = doc(db, `artifacts/${appId}/public/data/vendors`, vendorId);
+            await deleteDoc(vendorRef);
+            console.log("[VendorService] Vendor deleted successfully:", vendorId);
+            return true;
+        } catch (error) {
+            console.error("[VendorService] Error deleting vendor:", error);
+            throw error;
+        }
     },
 
-    // Parse Import File (Mock)
+    // Generate Excel Template for vendor import
+    generateExcelTemplate: () => {
+        try {
+            const workbook = XLSX.utils.book_new();
+
+            // Template headers and sample data
+            const templateData = [
+                ['VENDOR IMPORT TEMPLATE'],
+                ['Fill in data starting from row 4. Do not modify column headers.'],
+                [],
+                ['Vendor Name', 'Contact Email', 'Bank Name', 'Branch Code', 'Account Name', 'Account Number', 'Status'],
+                ['ACME CORP LTD', 'finance@acme.com', 'GT Bank', '01', 'ACME CORP LTD', '1234567890', 'active'],
+                ['', '', '', '', '', '', ''] // Empty row for user to fill
+            ];
+
+            const worksheet = XLSX.utils.aoa_to_sheet(templateData);
+
+            // Set column widths
+            worksheet['!cols'] = [
+                { wch: 25 }, // Vendor Name
+                { wch: 25 }, // Contact Email
+                { wch: 20 }, // Bank Name
+                { wch: 12 }, // Branch Code
+                { wch: 25 }, // Account Name
+                { wch: 18 }, // Account Number
+                { wch: 10 }  // Status
+            ];
+
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendor Import');
+
+            // Generate and download file
+            XLSX.writeFile(workbook, `Vendor_Import_Template_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+            console.log('[VendorService] Template downloaded successfully');
+            return { success: true };
+        } catch (error) {
+            console.error('[VendorService] Error generating template:', error);
+            return { success: false, error: error.message };
+        }
+    },
+
+    // Parse Import File - REAL implementation with XLSX
     parseImportFile: async (file) => {
-        return new Promise((resolve) => {
-            console.log("Parsing file:", file.name);
-            // Mock parsed data
-            setTimeout(() => {
-                resolve([
-                    {
-                        name: 'NEW IMPORTED VENDOR',
-                        email: 'new@vendor.com',
-                        status: 'active',
-                        banking: {
-                            bankName: 'CalBank',
-                            branchCode: '20',
-                            accountName: 'NEW IMPORTED VENDOR',
-                            accountNumber: '1234567890'
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+
+                    // Get first sheet
+                    const sheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[sheetName];
+
+                    // Convert to JSON array
+                    const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+                    console.log('[VendorService] Raw import data:', rawData);
+
+                    // Find header row (look for "Vendor Name" in first column)
+                    let headerRowIndex = -1;
+                    for (let i = 0; i < Math.min(10, rawData.length); i++) {
+                        if (rawData[i] && rawData[i][0] &&
+                            rawData[i][0].toString().toLowerCase().includes('vendor name')) {
+                            headerRowIndex = i;
+                            break;
                         }
                     }
-                ]);
-            }, 1000);
+
+                    if (headerRowIndex === -1) {
+                        resolve({
+                            success: false,
+                            error: 'Could not find header row. Make sure "Vendor Name" is in the first column.',
+                            vendors: [],
+                            summary: { totalRows: 0, validVendors: 0, errors: ['Header row not found'] }
+                        });
+                        return;
+                    }
+
+                    const vendors = [];
+                    const errors = [];
+
+                    // Parse data rows (after header)
+                    for (let i = headerRowIndex + 1; i < rawData.length; i++) {
+                        const row = rawData[i];
+
+                        // Skip empty rows
+                        if (!row || !row[0] || row[0].toString().trim() === '') {
+                            continue;
+                        }
+
+                        const vendorName = row[0]?.toString().trim() || '';
+                        const email = row[1]?.toString().trim() || '';
+                        const bankName = row[2]?.toString().trim() || '';
+                        const branchCode = row[3]?.toString().trim() || '';
+                        const accountName = row[4]?.toString().trim() || '';
+                        const accountNumber = row[5]?.toString().trim() || '';
+                        const status = row[6]?.toString().trim().toLowerCase() || 'active';
+
+                        // Validation
+                        const rowErrors = [];
+                        if (!vendorName) rowErrors.push('Vendor name is required');
+                        if (!bankName) rowErrors.push('Bank name is required');
+                        if (!accountNumber) rowErrors.push('Account number is required');
+
+                        if (rowErrors.length > 0) {
+                            errors.push({
+                                row: i + 1,
+                                vendorName: vendorName || '(empty)',
+                                errors: rowErrors
+                            });
+                            continue;
+                        }
+
+                        vendors.push({
+                            name: vendorName,
+                            email: email,
+                            status: status === 'inactive' ? 'inactive' : 'active',
+                            banking: {
+                                bankName: bankName,
+                                branchCode: branchCode,
+                                accountName: accountName || vendorName,
+                                accountNumber: accountNumber
+                            }
+                        });
+                    }
+
+                    console.log('[VendorService] Parsed vendors:', vendors.length);
+                    console.log('[VendorService] Parse errors:', errors.length);
+
+                    resolve({
+                        success: true,
+                        vendors: vendors,
+                        summary: {
+                            totalRows: rawData.length - headerRowIndex - 1,
+                            validVendors: vendors.length,
+                            invalidRows: errors.length,
+                            errors: errors
+                        }
+                    });
+
+                } catch (parseError) {
+                    console.error('[VendorService] Parse error:', parseError);
+                    resolve({
+                        success: false,
+                        error: `Failed to parse file: ${parseError.message}`,
+                        vendors: [],
+                        summary: { totalRows: 0, validVendors: 0, errors: [parseError.message] }
+                    });
+                }
+            };
+
+            reader.onerror = (error) => {
+                console.error('[VendorService] File read error:', error);
+                resolve({
+                    success: false,
+                    error: 'Failed to read file',
+                    vendors: [],
+                    summary: { totalRows: 0, validVendors: 0, errors: ['File read error'] }
+                });
+            };
+
+            reader.readAsArrayBuffer(file);
         });
+    },
+
+    // Bulk import vendors to Firestore
+    importVendors: async (db, appId, vendors) => {
+        try {
+            console.log(`[VendorService] Importing ${vendors.length} vendors to Firestore...`);
+
+            const vendorsRef = collection(db, `artifacts/${appId}/public/data/vendors`);
+            const results = {
+                success: true,
+                imported: 0,
+                failed: 0,
+                errors: []
+            };
+
+            // Import each vendor individually for better error handling
+            for (const vendor of vendors) {
+                try {
+                    await addDoc(vendorsRef, {
+                        ...vendor,
+                        createdAt: new Date().toISOString(),
+                        updatedAt: new Date().toISOString(),
+                        importedAt: new Date().toISOString()
+                    });
+                    results.imported++;
+                } catch (error) {
+                    results.failed++;
+                    results.errors.push({
+                        vendor: vendor.name,
+                        error: error.message
+                    });
+                }
+            }
+
+            console.log(`[VendorService] Import complete: ${results.imported} success, ${results.failed} failed`);
+            return results;
+
+        } catch (error) {
+            console.error('[VendorService] Import error:', error);
+            return {
+                success: false,
+                imported: 0,
+                failed: vendors.length,
+                errors: [{ vendor: 'All', error: error.message }]
+            };
+        }
+    },
+
+    // Export all vendors to Excel
+    exportVendors: async (db, appId) => {
+        try {
+            const vendors = await VendorService.getAllVendors(db, appId);
+
+            if (vendors.length === 0) {
+                return { success: false, error: 'No vendors to export' };
+            }
+
+            const workbook = XLSX.utils.book_new();
+
+            // Prepare data
+            const exportData = [
+                ['VENDOR EXPORT'],
+                [`Generated: ${new Date().toLocaleString()}`],
+                [],
+                ['Vendor Name', 'Contact Email', 'Bank Name', 'Branch Code', 'Account Name', 'Account Number', 'Status'],
+                ...vendors.map(v => [
+                    v.name || '',
+                    v.email || '',
+                    v.banking?.bankName || '',
+                    v.banking?.branchCode || '',
+                    v.banking?.accountName || '',
+                    v.banking?.accountNumber || '',
+                    v.status || 'active'
+                ])
+            ];
+
+            const worksheet = XLSX.utils.aoa_to_sheet(exportData);
+
+            // Set column widths
+            worksheet['!cols'] = [
+                { wch: 25 }, { wch: 25 }, { wch: 20 },
+                { wch: 12 }, { wch: 25 }, { wch: 18 }, { wch: 10 }
+            ];
+
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Vendors');
+
+            XLSX.writeFile(workbook, `Vendors_Export_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+            return { success: true, count: vendors.length };
+        } catch (error) {
+            console.error('[VendorService] Export error:', error);
+            return { success: false, error: error.message };
+        }
     }
 };

@@ -12,6 +12,11 @@ export const SIGNATORIES = [
     { value: "balthazar_atta", label: "BALTHAZAR KWESI ATTA PANYIN BAIDEI" }
 ];
 
+/**
+ * @deprecated DEPARTMENTS is now auto-synced from budget lines (deptDimension field).
+ * Use validationData.departments instead, which is populated from Budget Management.
+ * This constant is kept for backwards compatibility only.
+ */
 export const DEPARTMENTS = [
     { value: "finance_dept", label: "Finance Department" },
     { value: "operations_dept", label: "Operations Department" },
