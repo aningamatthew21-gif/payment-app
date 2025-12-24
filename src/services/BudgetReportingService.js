@@ -1,7 +1,7 @@
 // Enhanced Budget Reporting Service
 // Generates comprehensive budget reports with overspending detection, underspending recognition, and performance analytics
 
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 import { BudgetBalanceService, getCurrentMonth } from './BudgetBalanceService.js';
 
 /**
@@ -9,7 +9,7 @@ import { BudgetBalanceService, getCurrentMonth } from './BudgetBalanceService.js
  * Provides comprehensive budget analysis and reporting capabilities
  */
 export class BudgetReportingService {
-  
+
   /**
    * Generate comprehensive budget performance report
    * @param {Array} budgetLines - Array of budget line objects
@@ -20,7 +20,7 @@ export class BudgetReportingService {
     const report = {
       month: selectedMonth,
       generatedAt: new Date(),
-      
+
       // Monthly Summary
       monthlySummary: {
         totalAllocated: 0,
@@ -31,10 +31,10 @@ export class BudgetReportingService {
         onTargetLines: [],
         completedLines: []
       },
-      
+
       // Department Analysis
       departmentAnalysis: {},
-      
+
       // Risk Assessment
       riskAssessment: {
         highRiskLines: [],
@@ -42,7 +42,7 @@ export class BudgetReportingService {
         lowRiskLines: [],
         noRiskLines: []
       },
-      
+
       // Performance Metrics
       performanceMetrics: {
         averageUtilization: 0,
@@ -50,23 +50,23 @@ export class BudgetReportingService {
         totalUnderspendAmount: 0,
         efficiencyScore: 0
       },
-      
+
       // Recommendations
       recommendations: []
     };
-    
+
     // Process each budget line
     budgetLines.forEach(line => {
       const monthData = line.monthlyBalances?.[selectedMonth];
       if (!monthData) return;
-      
+
       const performance = BudgetBalanceService.getBudgetPerformance(line);
-      
+
       // Update monthly summary
       report.monthlySummary.totalAllocated += monthData.allocated;
       report.monthlySummary.totalSpent += monthData.spent;
       report.monthlySummary.totalRemaining += monthData.balance;
-      
+
       // Categorize by performance
       if (monthData.status === 'overspent') {
         report.monthlySummary.overspentLines.push({
@@ -114,7 +114,7 @@ export class BudgetReportingService {
           utilizationRate: monthData.utilizationRate
         });
       }
-      
+
       // Risk assessment
       if (performance.riskLevel === 'HIGH') {
         report.riskAssessment.highRiskLines.push({
@@ -157,7 +157,7 @@ export class BudgetReportingService {
           riskLevel: performance.riskLevel
         });
       }
-      
+
       // Department analysis
       if (!report.departmentAnalysis[line.deptCode]) {
         report.departmentAnalysis[line.deptCode] = {
@@ -172,37 +172,37 @@ export class BudgetReportingService {
           onTargetLines: 0
         };
       }
-      
+
       const dept = report.departmentAnalysis[line.deptCode];
       dept.totalAllocated += monthData.allocated;
       dept.totalSpent += monthData.spent;
       dept.totalRemaining += monthData.balance;
       dept.budgetLines += 1;
-      
+
       if (monthData.status === 'overspent') dept.overspentLines += 1;
       if (monthData.status === 'underspent') dept.underspentLines += 1;
       if (monthData.status === 'completed') dept.completedLines += 1;
       if (monthData.status === 'active') dept.onTargetLines += 1;
     });
-    
+
     // Calculate performance metrics
     const totalLines = budgetLines.length;
     if (totalLines > 0) {
-      report.performanceMetrics.averageUtilization = 
+      report.performanceMetrics.averageUtilization =
         (report.monthlySummary.totalSpent / report.monthlySummary.totalAllocated) * 100;
-      
-      report.performanceMetrics.totalOverspendAmount = 
+
+      report.performanceMetrics.totalOverspendAmount =
         report.monthlySummary.overspentLines.reduce((sum, line) => sum + line.overspendAmount, 0);
-      
-      report.performanceMetrics.totalUnderspendAmount = 
+
+      report.performanceMetrics.totalUnderspendAmount =
         report.monthlySummary.underspentLines.reduce((sum, line) => sum + line.savingsAmount, 0);
-      
+
       // Calculate efficiency score (0-100)
       const overspendPenalty = (report.performanceMetrics.totalOverspendAmount / report.monthlySummary.totalAllocated) * 100;
       const underspendBonus = (report.performanceMetrics.totalUnderspendAmount / report.monthlySummary.totalAllocated) * 50;
       report.performanceMetrics.efficiencyScore = Math.max(0, Math.min(100, 100 - overspendPenalty + underspendBonus));
     }
-    
+
     // Generate recommendations
     if (report.monthlySummary.overspentLines.length > 0) {
       report.recommendations.push({
@@ -213,7 +213,7 @@ export class BudgetReportingService {
         affectedLines: report.monthlySummary.overspentLines.map(line => line.name)
       });
     }
-    
+
     if (report.monthlySummary.underspentLines.length > 0) {
       report.recommendations.push({
         type: 'INFO',
@@ -223,7 +223,7 @@ export class BudgetReportingService {
         affectedLines: report.monthlySummary.underspentLines.map(line => line.name)
       });
     }
-    
+
     if (report.riskAssessment.highRiskLines.length > 0) {
       report.recommendations.push({
         type: 'CRITICAL',
@@ -233,7 +233,7 @@ export class BudgetReportingService {
         affectedLines: report.riskAssessment.highRiskLines.map(line => line.name)
       });
     }
-    
+
     // Add efficiency recommendations
     if (report.performanceMetrics.efficiencyScore < 70) {
       report.recommendations.push({
@@ -244,10 +244,10 @@ export class BudgetReportingService {
         metric: `Current Efficiency: ${report.performanceMetrics.efficiencyScore.toFixed(1)}%`
       });
     }
-    
+
     return report;
   }
-  
+
   /**
    * Export budget performance report to Excel
    * @param {Object} report - Budget performance report
@@ -256,8 +256,11 @@ export class BudgetReportingService {
    */
   static async exportBudgetReportToExcel(report, filename = 'Budget_Performance_Report.xlsx') {
     try {
+      // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+      const XLSX = await import('xlsx');
+
       const workbook = XLSX.utils.book_new();
-      
+
       // 1. Executive Summary Sheet
       const summaryData = [
         ['BUDGET PERFORMANCE REPORT - EXECUTIVE SUMMARY'],
@@ -283,50 +286,50 @@ export class BudgetReportingService {
         ['Low Risk Lines:', report.riskAssessment.lowRiskLines.length],
         ['No Risk Lines:', report.riskAssessment.noRiskLines.length]
       ];
-      
+
       const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
       XLSX.utils.book_append_sheet(workbook, summaryWs, "Executive Summary");
-      
+
       // 2. Monthly Performance Sheet
       const monthlyHeaders = [
-        'Account No', 'Name', 'Department Code', 'Department Name', 'Allocated', 'Spent', 'Remaining', 
+        'Account No', 'Name', 'Department Code', 'Department Name', 'Allocated', 'Spent', 'Remaining',
         'Status', 'Utilization Rate', 'Risk Level', 'Notes'
       ];
-      
+
       const monthlyData = [monthlyHeaders];
-      
+
       // Add all budget lines
       const allLines = [
         ...report.monthlySummary.overspentLines.map(line => [
-          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent, 
-          line.overspendAmount, 'OVERSENT', `${line.utilizationRate.toFixed(1)}%`, line.riskLevel, 
+          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent,
+          line.overspendAmount, 'OVERSENT', `${line.utilizationRate.toFixed(1)}%`, line.riskLevel,
           `OVERSPENT by $${line.overspendAmount.toLocaleString()}`
         ]),
         ...report.monthlySummary.underspentLines.map(line => [
-          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent, 
-          line.remaining, 'UNDERSPENT', `${line.utilizationRate.toFixed(1)}%`, 'LOW', 
+          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent,
+          line.remaining, 'UNDERSPENT', `${line.utilizationRate.toFixed(1)}%`, 'LOW',
           `SAVINGS: $${line.savingsAmount.toLocaleString()}`
         ]),
         ...report.monthlySummary.onTargetLines.map(line => [
-          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent, 
+          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent,
           line.remaining, 'ON TARGET', `${line.utilizationRate.toFixed(1)}%`, 'LOW', 'Performing well'
         ]),
         ...report.monthlySummary.completedLines.map(line => [
-          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent, 
+          line.accountNo, line.name, line.deptCode, line.deptDimension, line.allocated, line.spent,
           0, 'COMPLETED', `${line.utilizationRate.toFixed(1)}%`, 'NONE', 'Budget fully utilized'
         ])
       ];
-      
+
       monthlyData.push(...allLines);
       const monthlyWs = XLSX.utils.aoa_to_sheet(monthlyData);
       XLSX.utils.book_append_sheet(workbook, monthlyWs, "Monthly Performance");
-      
+
       // 3. Department Analysis Sheet
       const deptHeaders = [
         'Department Code', 'Department Name', 'Total Allocated', 'Total Spent', 'Total Remaining',
         'Budget Lines', 'Overspent', 'Underspent', 'On Target', 'Completed', 'Efficiency'
       ];
-      
+
       const deptData = [deptHeaders];
       Object.values(report.departmentAnalysis).forEach(dept => {
         const efficiency = (dept.totalSpent / dept.totalAllocated) * 100;
@@ -344,63 +347,63 @@ export class BudgetReportingService {
           `${efficiency.toFixed(1)}%`
         ]);
       });
-      
+
       const deptWs = XLSX.utils.aoa_to_sheet(deptData);
       XLSX.utils.book_append_sheet(workbook, deptWs, "Department Analysis");
-      
+
       // 4. Risk Assessment Sheet
       const riskHeaders = [
         'Account No', 'Name', 'Department', 'Risk Level', 'Over Budget Amount', 'Months Overspent', 'Actions Required'
       ];
-      
+
       const riskData = [riskHeaders];
-      
+
       // Add high risk lines first
       report.riskAssessment.highRiskLines.forEach(line => {
         riskData.push([
-          line.accountNo, line.name, line.deptDimension, line.riskLevel, 
+          line.accountNo, line.name, line.deptDimension, line.riskLevel,
           line.overBudgetAmount, line.monthsOverspent, 'IMMEDIATE ACTION REQUIRED'
         ]);
       });
-      
+
       // Add medium risk lines
       report.riskAssessment.mediumRiskLines.forEach(line => {
         riskData.push([
-          line.accountNo, line.name, line.deptDimension, line.riskLevel, 
+          line.accountNo, line.name, line.deptDimension, line.riskLevel,
           line.overBudgetAmount, line.monthsOverspent, 'Monitor closely'
         ]);
       });
-      
+
       // Add low risk lines
       report.riskAssessment.lowRiskLines.forEach(line => {
         riskData.push([
-          line.accountNo, line.name, line.deptDimension, line.riskLevel, 
+          line.accountNo, line.name, line.deptDimension, line.riskLevel,
           line.overBudgetAmount, line.monthsOverspent, 'Continue monitoring'
         ]);
       });
-      
+
       const riskWs = XLSX.utils.aoa_to_sheet(riskData);
       XLSX.utils.book_append_sheet(workbook, riskWs, "Risk Assessment");
-      
+
       // 5. Recommendations Sheet
       const recHeaders = ['Priority', 'Type', 'Message', 'Recommended Action', 'Details'];
       const recData = [recHeaders];
-      
+
       report.recommendations.forEach(rec => {
         recData.push([
-          rec.priority, rec.type, rec.message, rec.action, 
+          rec.priority, rec.type, rec.message, rec.action,
           rec.affectedLines ? rec.affectedLines.join(', ') : rec.metric || ''
         ]);
       });
-      
+
       const recWs = XLSX.utils.aoa_to_sheet(recData);
       XLSX.utils.book_append_sheet(workbook, recWs, "Recommendations");
-      
+
       // Save the workbook
       XLSX.writeFile(workbook, filename);
-      
+
       console.log(`Budget report exported successfully: ${filename}`);
-      
+
     } catch (error) {
       console.error('Error exporting budget report to Excel:', error);
       throw error;

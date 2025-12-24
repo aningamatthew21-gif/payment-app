@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 import { MasterLogExportService } from './MasterLogExportService';
 import { BudgetReportingService } from './BudgetReportingService';
 
@@ -313,6 +313,8 @@ class ReportingService {
   // Generate comprehensive financial report
   static async generateFinancialReport(data, reportType = 'comprehensive') {
     try {
+      // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+      const XLSX = await import('xlsx');
       const wb = XLSX.utils.book_new();
 
       switch (reportType) {
@@ -960,8 +962,10 @@ class ReportingService {
   }
 
   // Generate Excel file from workbook
-  static generateExcelFile(wb, filename) {
+  static async generateExcelFile(wb, filename) {
     try {
+      // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+      const XLSX = await import('xlsx');
       const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
       const blob = new Blob([excelBuffer], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'

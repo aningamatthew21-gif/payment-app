@@ -173,6 +173,39 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onLogout }) => {
 
         console.log('[BudgetManagement] Setting up enhanced real-time service...');
 
+        // ✅ FIX: Moved loadBudgetDataDirectly INSIDE useEffect to fix scope/dependency issues
+        const loadBudgetDataDirectly = async () => {
+            try {
+                console.log('[BudgetManagement] Loading budget data directly from Firestore...');
+                const budgetRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
+                const snapshot = await getDocs(budgetRef);
+                const data = [];
+
+                snapshot.forEach(doc => {
+                    const budgetLine = doc.data();
+                    data.push({
+                        id: doc.id,
+                        ...budgetLine
+                    });
+                });
+
+                if (data.length > 0) {
+                    const enhancedData = data.map(line => {
+                        if (!line.monthlyBalances) {
+                            return BudgetBalanceService.initializeMonthlyBalances(line);
+                        }
+                        return line;
+                    });
+                    console.log('[BudgetManagement] Setting budget lines with direct data:', enhancedData.length);
+                    setBudgetLines(enhancedData);
+                }
+                setLoading(false);
+            } catch (error) {
+                console.error('[BudgetManagement] Error loading budget data directly:', error);
+                setLoading(false);
+            }
+        };
+
         // Add a timeout to ensure data is loaded even if real-time service fails
         const dataTimeout = setTimeout(() => {
             // Use ref instead of state to avoid stale closure
@@ -291,44 +324,7 @@ const BudgetManagementPage = ({ db, userId, appId, onNavigate, onLogout }) => {
         };
     }, [db, userId, appId]);
 
-    const loadBudgetDataDirectly = async () => {
-        if (!db || !userId) return;
-
-        try {
-            console.log('[BudgetManagement] Loading budget data directly from Firestore...');
-            const budgetRef = collection(db, `artifacts/${appId}/public/data/budgetLines`);
-            const { getDocs } = await import('firebase/firestore');
-
-            const snapshot = await getDocs(budgetRef);
-            const data = [];
-
-            snapshot.forEach(doc => {
-                const budgetLine = doc.data();
-                data.push({
-                    id: doc.id,
-                    ...budgetLine
-                });
-            });
-
-            if (data.length > 0) {
-                // Initialize monthly balances for existing budget lines
-                const enhancedData = data.map(line => {
-                    if (!line.monthlyBalances) {
-                        return BudgetBalanceService.initializeMonthlyBalances(line);
-                    }
-                    return line;
-                });
-
-                console.log('[BudgetManagement] Setting budget lines with direct data:', enhancedData.length);
-                setBudgetLines(enhancedData);
-            }
-
-            setLoading(false);
-        } catch (error) {
-            console.error('[BudgetManagement] Error loading budget data directly:', error);
-            setLoading(false);
-        }
-    };
+    // Note: loadBudgetDataDirectly has been moved inside the useEffect above for cleaner code organization
 
     // Hardcoded sample data removed - budget lines are now fully dynamic
     // Users can import from Excel or create manually via the UI

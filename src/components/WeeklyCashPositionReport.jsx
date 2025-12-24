@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Download, Calendar, RefreshCw, Wallet, AlertCircle } from 'lucide-react';
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 import { CashPositionService, INFLOW_CATEGORIES, OUTFLOW_CATEGORIES, PENDING_CATEGORIES } from '../services/CashPositionService';
 
 const WeeklyCashPositionReport = ({ isOpen, onClose, db, appId }) => {
@@ -52,8 +52,11 @@ const WeeklyCashPositionReport = ({ isOpen, onClose, db, appId }) => {
         return d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     };
 
-    const exportToExcel = () => {
+    const exportToExcel = async () => {
         if (!reportData) return;
+
+        // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+        const XLSX = await import('xlsx');
 
         const wb = XLSX.utils.book_new();
 

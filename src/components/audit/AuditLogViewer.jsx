@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Filter, Download, Shield, Clock, ChevronDown, ChevronUp, X, FileText } from 'lucide-react';
 import AuditService, { AUDIT_ACTIONS } from '../../services/AuditService';
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 
 /**
  * AuditLogViewer Component
@@ -62,7 +62,10 @@ const AuditLogViewer = ({ db, appId, currentUser }) => {
         }
     };
 
-    const handleExport = () => {
+    const handleExport = async () => {
+        // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+        const XLSX = await import('xlsx');
+
         const exportData = logs.map(log => ({
             Timestamp: log.timestamp.toLocaleString(),
             Action: log.actionType,

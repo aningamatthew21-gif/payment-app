@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 import { BudgetBalanceService } from './BudgetBalanceService';
 
 // Budget Excel template configuration matching user's structure
@@ -22,6 +22,9 @@ const BUDGET_TEMPLATE_CONFIG = {
 
 // Helper function to read Excel file
 const readBudgetExcelFile = async (file) => {
+  // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+  const XLSX = await import('xlsx');
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -41,6 +44,9 @@ const readBudgetExcelFile = async (file) => {
 // Export budget data as Excel template matching user's structure
 export const exportBudgetTemplate = async (budgetLines = [], includeData = true) => {
   try {
+    // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+    const XLSX = await import('xlsx');
+
     const workbook = XLSX.utils.book_new();
     const mainData = [];
 
@@ -128,6 +134,9 @@ export const exportBudgetTemplate = async (budgetLines = [], includeData = true)
 // Import budget data from Excel file matching user's structure
 export const importBudgetData = async (file) => {
   try {
+    // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+    const XLSX = await import('xlsx');
+
     const workbook = await readBudgetExcelFile(file);
     const worksheet = workbook.Sheets['Budget Template'] || workbook.Sheets[workbook.SheetNames[0]];
 
@@ -209,6 +218,9 @@ export const importBudgetData = async (file) => {
 // Export budget summary report by department
 export const exportBudgetSummary = async (budgetLines) => {
   try {
+    // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+    const XLSX = await import('xlsx');
+
     const workbook = XLSX.utils.book_new();
 
     // Summary sheet

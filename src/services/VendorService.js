@@ -1,5 +1,5 @@
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, query, orderBy, writeBatch } from 'firebase/firestore';
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 
 /**
  * VendorService - Single source of truth for vendor data
@@ -93,8 +93,11 @@ export const VendorService = {
     },
 
     // Generate Excel Template for vendor import
-    generateExcelTemplate: () => {
+    generateExcelTemplate: async () => {
         try {
+            // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+            const XLSX = await import('xlsx');
+
             const workbook = XLSX.utils.book_new();
 
             // Template headers and sample data
@@ -135,6 +138,9 @@ export const VendorService = {
 
     // Parse Import File - REAL implementation with XLSX
     parseImportFile: async (file) => {
+        // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+        const XLSX = await import('xlsx');
+
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
 
@@ -341,6 +347,9 @@ export const VendorService = {
             if (vendors.length === 0) {
                 return { success: false, error: 'No vendors to export' };
             }
+
+            // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+            const XLSX = await import('xlsx');
 
             const workbook = XLSX.utils.book_new();
 

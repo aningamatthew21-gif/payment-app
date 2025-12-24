@@ -1,5 +1,5 @@
 import { getDocs, collection, query, orderBy, where } from 'firebase/firestore';
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 
 /**
  * Master Log Export Service
@@ -29,6 +29,9 @@ export class MasterLogExportService {
 
       // Transform data to match VBA system structure
       const transformedData = this.transformDataForExport(entries);
+
+      // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+      const XLSX = await import('xlsx');
 
       // Create workbook and worksheet
       const workbook = XLSX.utils.book_new();

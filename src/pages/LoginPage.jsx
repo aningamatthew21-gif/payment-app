@@ -19,7 +19,7 @@ const LoginPage = ({ onLogin }) => {
     const handleClearSession = async () => {
         try {
             console.log('[LoginPage] Clearing existing session...');
-            const { getAuth, signOut } = await import('firebase/auth');
+            // ✅ FIX: Use statically imported functions instead of redundant dynamic import
             const auth = getAuth();
             if (auth.currentUser) {
                 await signOut(auth);

@@ -1,7 +1,7 @@
 // Excel Service - Handles Excel template export/import for weekly payment sheets
 // This service provides comprehensive Excel functionality for data exchange
 
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 
 // Excel template configuration - CLEAN VERSION (Input Fields Only)
 const TEMPLATE_CONFIG = {
@@ -94,8 +94,11 @@ export const updateValidationLists = (validationData) => {
  * @param {Object} options - Export options
  * @returns {Blob} Excel file as blob
  */
-export const exportWeeklySheetTemplate = (sheetName, existingPayments = [], options = {}) => {
+export const exportWeeklySheetTemplate = async (sheetName, existingPayments = [], options = {}) => {
   try {
+    // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+    const XLSX = await import('xlsx');
+
     // Ensure validation lists are populated
     console.log('Exporting template with validation lists:', DYNAMIC_VALIDATION_LISTS);
     console.log('Vendors included in export:', DYNAMIC_VALIDATION_LISTS.VENDORS);
@@ -467,7 +470,10 @@ export const importWeeklySheetTemplate = async (file, sheetName) => {
 /**
  * Read Excel file and extract data
  */
-const readExcelFile = (file) => {
+const readExcelFile = async (file) => {
+  // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+  const XLSX = await import('xlsx');
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 
@@ -713,7 +719,7 @@ const formatDate = (dateValue) => {
 /**
  * Generate a sample template for testing
  */
-export const generateSampleTemplate = (sheetName) => {
+export const generateSampleTemplate = async (sheetName) => {
   const samplePayments = [
     {
       date: '2024-01-15',
@@ -752,6 +758,9 @@ export const generateSampleTemplate = (sheetName) => {
  * @returns {Promise<void>}
  */
 export const exportValidationData = async (validationData) => {
+  // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+  const XLSX = await import('xlsx');
+
   const workbook = XLSX.utils.book_new();
 
   // Create main validation data worksheet in VALIDATION LIST format
@@ -949,7 +958,10 @@ export const exportValidationData = async (validationData) => {
  * @param {File} file - Excel file to read
  * @returns {Promise<Object>} Workbook object
  */
-const readValidationExcelFile = (file) => {
+const readValidationExcelFile = async (file) => {
+  // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+  const XLSX = await import('xlsx');
+
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
 

@@ -17,7 +17,7 @@ export class WHTEnhancedService {
    * @param {Object} db - Firestore database instance
    * @param {string} appId - Application ID
    * @param {string} procurementType - Procurement type name
-   * @returns {Promise<number>} - WHT rate as decimal (0 if not found)
+   * @returns {Promise<number|null>} - WHT rate as decimal (null if not found)
    */
   static async getDynamicWHTRate(db, appId, procurementType) {
     try {
@@ -30,67 +30,112 @@ export class WHTEnhancedService {
         }
       }
 
-      // Get rate from database
-      const rate = await ProcurementTypesService.getWHTRate(db, appId, procurementType);
+      // First check if the procurement type actually EXISTS in the database
+      const typeData = await ProcurementTypesService.getProcurementTypeByName(db, appId, procurementType);
 
-      // Cache the result
-      if (WHT_CONFIG.CACHE_PROCUREMENT_TYPES) {
-        this.cacheWHTRate(procurementType, rate);
+      if (typeData && typeData.isActive) {
+        // Type exists - get its rate (could be 0 for tax-exempt, that's valid)
+        const rate = typeData.whtRate;
+
+        if (typeof rate === 'number') {
+          // Cache the result
+          if (WHT_CONFIG.CACHE_PROCUREMENT_TYPES) {
+            this.cacheWHTRate(procurementType, rate);
+          }
+          console.log(`[WHTEnhancedService] Retrieved rate for ${procurementType}: ${(rate * 100).toFixed(1)}%`);
+          return rate;
+        }
       }
 
-      console.log(`[WHTEnhancedService] Retrieved rate for ${procurementType}: ${(rate * 100).toFixed(1)}%`);
-      return rate;
+      // Type not found in procurement types collection
+      console.warn(`[WHTEnhancedService] Procurement type '${procurementType}' not found in database`);
+      return null;
 
     } catch (error) {
       console.error('[WHTEnhancedService] Error getting dynamic WHT rate:', error);
-      return 0;
+      return null;
     }
   }
 
   /**
    * Get WHT rate from validation collection (database fallback)
+   * Uses case-insensitive matching since user input may vary
    * @param {Object} db - Firestore database instance
    * @param {string} appId - Application ID
    * @param {string} procurementType - Procurement type name
-   * @returns {Promise<number>} - WHT rate as decimal (0 if not found)
+   * @returns {Promise<number|null>} - WHT rate as decimal (null if not found)
    */
   static async getWHTRateFromValidation(db, appId, procurementType) {
     try {
       if (!db || !appId || !procurementType) {
-        return 0;
+        return null;
       }
 
-      const normalized = procurementType?.toUpperCase().trim();
+      const searchTerm = procurementType.toUpperCase().trim();
       const validationRef = collection(db, `artifacts/${appId}/public/data/validation`);
-      
-      // Query for procurement type in validation collection
+
+      // Query for ALL procurement types since Firestore doesn't support case-insensitive queries
       const q = query(
         validationRef,
         where('field', '==', 'procurementTypes'),
-        where('value', '==', normalized),
         where('isActive', '==', true)
       );
 
       const querySnapshot = await getDocs(q);
-      
+
       if (!querySnapshot.empty) {
-        const doc = querySnapshot.docs[0];
-        const data = doc.data();
-        const rate = data.rate || 0;
-        
-        // Convert percentage to decimal (e.g., 5.0 -> 0.05)
-        const decimalRate = rate > 1 ? rate / 100 : rate;
-        
-        console.log(`[WHTEnhancedService] Found rate in validation collection for ${normalized}: ${rate}% (${(decimalRate * 100).toFixed(2)}%)`);
-        return decimalRate;
+        // Find matching entry with case-insensitive comparison
+        for (const doc of querySnapshot.docs) {
+          const data = doc.data();
+          const storedValue = (data.value || '').toUpperCase().trim();
+
+          // Exact match (case-insensitive)
+          if (storedValue === searchTerm) {
+            const rate = (data.rate !== undefined && data.rate !== null) ? data.rate : null;
+
+            if (rate === null) {
+              console.warn(`[WHTEnhancedService] Rate field missing in validation record for ${storedValue}`);
+              continue;
+            }
+
+            // Convert percentage to decimal (e.g., 5.0 -> 0.05)
+            const decimalRate = rate > 1 ? rate / 100 : rate;
+            console.log(`[WHTEnhancedService] Found rate in validation collection for ${searchTerm}: ${rate}% (${(decimalRate * 100).toFixed(2)}%)`);
+            return decimalRate;
+          }
+        }
+
+        // Fuzzy match: Try singular/plural variations
+        for (const doc of querySnapshot.docs) {
+          const data = doc.data();
+          const storedValue = (data.value || '').toUpperCase().trim();
+
+          // Try removing or adding 'S'
+          const fuzzySearchTerms = [];
+          if (searchTerm.endsWith('S')) {
+            fuzzySearchTerms.push(searchTerm.slice(0, -1)); // SERVICES -> SERVICE
+          } else {
+            fuzzySearchTerms.push(searchTerm + 'S'); // SERVICE -> SERVICES
+          }
+
+          if (fuzzySearchTerms.includes(storedValue)) {
+            const rate = (data.rate !== undefined && data.rate !== null) ? data.rate : null;
+
+            if (rate === null) continue;
+
+            const decimalRate = rate > 1 ? rate / 100 : rate;
+            console.log(`[WHTEnhancedService] Found rate via fuzzy match: ${searchTerm} -> ${storedValue}: ${rate}%`);
+            return decimalRate;
+          }
+        }
       }
 
-      console.warn(`[WHTEnhancedService] No rate found in validation collection for ${normalized}`);
-      return 0;
+      console.warn(`[WHTEnhancedService] No rate found in validation collection for ${searchTerm}`);
+      return null;
 
     } catch (error) {
       console.error('[WHTEnhancedService] Error getting rate from validation collection:', error);
-      return 0;
+      return null;
     }
   }
 
@@ -110,20 +155,25 @@ export class WHTEnhancedService {
   /**
    * Get effective WHT rate (ProcurementTypesService -> Validation Collection)
    * This is the "Smart Logic" that tries dedicated collection first, then validation collection
+   * 
+   * 🚨 STRICT MODE: Throws error if no rate found - prevents 0% tax default
+   * 
    * @param {Object} db - Firestore database instance
    * @param {string} appId - Application ID
    * @param {string} procurementType - Procurement type name
    * @returns {Promise<number>} - Effective WHT rate as decimal
+   * @throws {Error} - If no rate configuration found (CRITICAL SECURITY)
    */
   static async getEffectiveWHTRate(db, appId, procurementType) {
-    let whtRate = 0;
-    const normalizedType = procurementType || 'DEFAULT';
+    const normalizedType = (procurementType || 'DEFAULT').toUpperCase().trim();
+    let whtRate = null;
 
+    // 1. Try ProcurementTypesService (dedicated collection)
     try {
-      // 1. Try ProcurementTypesService (dedicated collection)
       whtRate = await this.getDynamicWHTRate(db, appId, normalizedType);
-      
-      if (whtRate > 0) {
+
+      // Rate found (including 0 which is valid for tax-exempt)
+      if (whtRate !== null) {
         console.log(`[WHTEnhancedService] Found rate from ProcurementTypesService for ${normalizedType}: ${(whtRate * 100).toFixed(2)}%`);
         return whtRate;
       }
@@ -134,8 +184,9 @@ export class WHTEnhancedService {
     // 2. Fallback to Validation Collection
     try {
       whtRate = await this.getWHTRateFromValidation(db, appId, normalizedType);
-      
-      if (whtRate > 0) {
+
+      // Rate found (including 0 which is valid for tax-exempt)
+      if (whtRate !== null) {
         console.log(`[WHTEnhancedService] Found rate from validation collection for ${normalizedType}: ${(whtRate * 100).toFixed(2)}%`);
         return whtRate;
       }
@@ -143,31 +194,41 @@ export class WHTEnhancedService {
       console.warn('[WHTEnhancedService] Validation collection rate fetch failed:', error);
     }
 
-    // 3. No rate found in either location
-    console.error(`[WHTEnhancedService] No WHT rate found for ${normalizedType} in database. Please add it to validation collection or procurement types.`);
-    return 0;
+    // 3. 🚨 CRITICAL SECURITY FIX: Block transaction if no rate found
+    // Do NOT return 0 - throw an error to prevent financial loss
+    const errorMessage = `CRITICAL: Missing WHT rate configuration for '${normalizedType}'. Transaction blocked to prevent financial loss. Please configure this procurement type in Validation Manager.`;
+    console.error(`[WHTEnhancedService] ${errorMessage}`);
+
+    throw new Error(errorMessage);
   }
 
   /**
    * Calculate WHT for multiple payments in a batch using FinancialEngine
+   * 
+   * 🚨 STRICT MODE: If a rate is missing for a payment, that payment is marked
+   * as blocked (success: false, isBlocked: true) rather than using 0% tax.
+   * 
    * @param {Object} db - Firestore database instance
    * @param {string} appId - Application ID
    * @param {Array} payments - Array of payment objects
-   * @returns {Promise<Object>} - Batch WHT calculation result
+   * @returns {Promise<Object>} - Batch WHT calculation result with blocked payments flagged
    */
   static async calculateBatchWHT(db, appId, payments) {
-    try {
-      console.log('[WHTEnhancedService] Calculating batch WHT for', payments.length, 'payments');
+    console.log('[WHTEnhancedService] Calculating batch WHT for', payments.length, 'payments');
 
-      const results = [];
-      let totalWHTAmount = 0;
-      let totalAmount = 0;
+    const results = [];
+    let totalWHTAmount = 0;
+    let totalAmount = 0;
+    let blockedCount = 0;
 
-      for (const payment of payments) {
-        // Get effective WHT rate
-        const procurementType = payment.procurementType || payment.procurement || 'DEFAULT';
+    for (const payment of payments) {
+      const paymentId = payment.id || `payment_${Date.now()}_${Math.random()}`;
+      const procurementType = payment.procurementType || payment.procurement || 'DEFAULT';
+
+      try {
+        // Get effective WHT rate (Will THROW if missing - STRICT MODE)
         const whtRate = await this.getEffectiveWHTRate(db, appId, procurementType);
-        
+
         // Prepare transaction for FinancialEngine
         const transaction = {
           fullPretax: Number(payment.amount || payment.pretaxAmount || payment.fullPretax || 0),
@@ -182,47 +243,71 @@ export class WHTEnhancedService {
         // Calculate using FinancialEngine (unified system)
         const calculation = calculateTotalTaxes(transaction, { whtRate });
 
-        const whtResult = {
+        // ✅ SUCCESS PATH - Payment calculated successfully
+        results.push({
+          paymentId: paymentId,
           success: true,
+          isBlocked: false,
           whtAmount: calculation.wht || 0,
           whtRate: whtRate,
           whtRatePercentage: `${(whtRate * 100).toFixed(2)}%`,
           procurementType: procurementType,
           currency: transaction.currency,
+          originalAmount: transaction.fullPretax,
           calculationMethod: 'financial_engine',
           timestamp: new Date().toISOString()
-        };
-
-        results.push({
-          paymentId: payment.id || `payment_${Date.now()}_${Math.random()}`,
-          ...whtResult,
-          originalAmount: transaction.fullPretax
         });
 
-        totalWHTAmount += whtResult.whtAmount;
+        totalWHTAmount += calculation.wht || 0;
         totalAmount += transaction.fullPretax;
-      }
 
-      const batchResult = {
-        payments: results,
-        summary: {
-          totalPayments: payments.length,
-          totalAmount: totalAmount,
-          totalWHTAmount: Math.round(totalWHTAmount * 100) / 100,
-          averageWHTRate: totalAmount > 0 ? (totalWHTAmount / totalAmount) : 0,
-          currency: payments[0]?.currency || 'GHS',
-          calculationMethod: 'financial_engine',
+      } catch (error) {
+        // ❌ ERROR PATH - Block this specific payment
+        console.error(`[WHTEnhancedService] Calculation failed for payment ${paymentId}:`, error.message);
+
+        blockedCount++;
+
+        results.push({
+          paymentId: paymentId,
+          success: false,          // Mark as failed
+          isBlocked: true,         // Explicit flag for UI
+          error: error.message,    // "CRITICAL: Missing WHT rate configuration..."
+          whtAmount: 0,
+          whtRate: 0,
+          whtRatePercentage: '0.00%',
+          procurementType: procurementType,
+          currency: payment.currency || 'GHS',
+          originalAmount: Number(payment.amount || payment.pretaxAmount || payment.fullPretax || 0),
+          calculationMethod: 'blocked',
           timestamp: new Date().toISOString()
-        }
-      };
+        });
 
-      console.log('[WHTEnhancedService] ✓ Batch WHT calculation completed:', batchResult.summary);
-      return batchResult;
-
-    } catch (error) {
-      console.error('[WHTEnhancedService] Error calculating batch WHT:', error);
-      throw error;
+        // Do NOT add to totals - blocked payments should not contribute
+      }
     }
+
+    const batchResult = {
+      payments: results,
+      summary: {
+        totalPayments: payments.length,
+        successfulPayments: payments.length - blockedCount,
+        blockedPayments: blockedCount,
+        totalAmount: totalAmount,
+        totalWHTAmount: Math.round(totalWHTAmount * 100) / 100,
+        averageWHTRate: totalAmount > 0 ? (totalWHTAmount / totalAmount) : 0,
+        currency: payments[0]?.currency || 'GHS',
+        calculationMethod: 'financial_engine',
+        hasBlockedPayments: blockedCount > 0,  // UI can check this
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    if (blockedCount > 0) {
+      console.warn(`[WHTEnhancedService] ⚠️ Batch has ${blockedCount} blocked payments due to missing rate configuration`);
+    }
+
+    console.log('[WHTEnhancedService] ✓ Batch WHT calculation completed:', batchResult.summary);
+    return batchResult;
   }
 
   /**

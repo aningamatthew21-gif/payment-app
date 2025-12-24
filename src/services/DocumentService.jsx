@@ -1,8 +1,8 @@
 import { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType } from 'docx';
-import * as XLSX from 'xlsx';
+// ✅ REMOVED: import * as XLSX from 'xlsx'; - Using dynamic import for code splitting
 
 class DocumentService {
-  
+
   // Generate Payment Schedule Document (Word)
   static async generatePaymentSchedule(data) {
     const doc = new Document({
@@ -22,7 +22,7 @@ class DocumentService {
             alignment: AlignmentType.CENTER,
             spacing: { after: 400 }
           }),
-          
+
           // Weekly Sheet Info
           new Paragraph({
             children: [
@@ -34,7 +34,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Paragraph({
             children: [
               new TextRun({
@@ -45,7 +45,7 @@ class DocumentService {
             ],
             spacing: { after: 400 }
           }),
-          
+
           // Summary Table
           new Paragraph({
             children: [
@@ -58,7 +58,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -78,9 +78,9 @@ class DocumentService {
               })
             ]
           }),
-          
+
           new Paragraph({ spacing: { after: 400 } }),
-          
+
           // Detailed Payments Table
           new Paragraph({
             children: [
@@ -93,7 +93,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -108,7 +108,7 @@ class DocumentService {
                 ]
               }),
               // Data Rows
-              ...data.transactions.map(payment => 
+              ...data.transactions.map(payment =>
                 new TableRow({
                   children: [
                     new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: payment.vendor || "" })] })] }),
@@ -121,9 +121,9 @@ class DocumentService {
               )
             ]
           }),
-          
+
           new Paragraph({ spacing: { after: 400 } }),
-          
+
           // Budget Summary
           new Paragraph({
             children: [
@@ -136,7 +136,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -147,7 +147,7 @@ class DocumentService {
                   new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Percentage", bold: true })] })] })
                 ]
               }),
-              ...data.budgetSummary.map(budget => 
+              ...data.budgetSummary.map(budget =>
                 new TableRow({
                   children: [
                     new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: budget.budgetLine })] })] }),
@@ -186,7 +186,7 @@ class DocumentService {
             alignment: AlignmentType.CENTER,
             spacing: { after: 400 }
           }),
-          
+
           // Weekly Sheet Info
           new Paragraph({
             children: [
@@ -198,7 +198,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Paragraph({
             children: [
               new TextRun({
@@ -209,7 +209,7 @@ class DocumentService {
             ],
             spacing: { after: 400 }
           }),
-          
+
           // Total Amount
           new Paragraph({
             children: [
@@ -222,7 +222,7 @@ class DocumentService {
             ],
             spacing: { after: 400 }
           }),
-          
+
           // Bank-specific instructions
           ...Object.entries(data.bankGroups).map(([bank, payments]) => [
             new Paragraph({
@@ -236,7 +236,7 @@ class DocumentService {
               ],
               spacing: { after: 200 }
             }),
-            
+
             new Table({
               width: { size: 100, type: WidthType.PERCENTAGE },
               rows: [
@@ -248,19 +248,19 @@ class DocumentService {
                     new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Reference", bold: true })] })] })
                   ]
                 }),
-                ...payments.map(payment => 
+                ...payments.map(payment =>
                   new TableRow({
                     children: [
                       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: payment.vendor || "" })] })] }),
                       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: payment.bankAccount || "N/A" })] })] }),
                       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: payment.amount || "0.00" })] })] }),
                       new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: payment.invoiceNo || "" })] })] })
-                  ]
+                    ]
                   })
                 )
               ]
             }),
-            
+
             new Paragraph({ spacing: { after: 400 } })
           ]).flat()
         ]
@@ -273,9 +273,12 @@ class DocumentService {
 
   // Generate Excel Summary (Excel)
   static async generateExcelSummary(data) {
+    // ✅ DYNAMIC IMPORT: Load xlsx only when needed for code splitting
+    const XLSX = await import('xlsx');
+
     // Create workbook and worksheets
-    const wb = XLSX.utils.book();
-    
+    const wb = XLSX.utils.book_new();
+
     // Summary Sheet
     const summaryData = [
       ["Payment Summary Report"],
@@ -295,10 +298,10 @@ class DocumentService {
         budget.percentage.toFixed(1) + "%"
       ])
     ];
-    
+
     const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
     XLSX.utils.book_append_sheet(wb, summaryWs, "Summary");
-    
+
     // Detailed Data Sheet
     const detailedHeaders = [
       "Batch ID",
@@ -314,7 +317,7 @@ class DocumentService {
       "VAT Amount",
       "Finalization Date"
     ];
-    
+
     const detailedData = [
       detailedHeaders,
       ...data.detailedData.map(payment => [
@@ -332,14 +335,14 @@ class DocumentService {
         new Date(payment.finalizationDate).toLocaleDateString()
       ])
     ];
-    
+
     const detailedWs = XLSX.utils.aoa_to_sheet(detailedData);
     XLSX.utils.book_append_sheet(wb, detailedWs, "Detailed Payments");
-    
+
     // Generate Excel file
     const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-    
+
     return blob;
   }
 
@@ -362,7 +365,7 @@ class DocumentService {
             alignment: AlignmentType.CENTER,
             spacing: { after: 400 }
           }),
-          
+
           // Company Info
           new Paragraph({
             children: [
@@ -375,7 +378,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Paragraph({
             children: [
               new TextRun({
@@ -386,7 +389,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           // Period Info
           new Paragraph({
             children: [
@@ -398,7 +401,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Paragraph({
             children: [
               new TextRun({
@@ -409,7 +412,7 @@ class DocumentService {
             ],
             spacing: { after: 400 }
           }),
-          
+
           // Total WHT
           new Paragraph({
             children: [
@@ -422,7 +425,7 @@ class DocumentService {
             ],
             spacing: { after: 400 }
           }),
-          
+
           // WHT Details Table
           new Paragraph({
             children: [
@@ -435,7 +438,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -448,7 +451,7 @@ class DocumentService {
                   new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "WHT Amount", bold: true })] })] })
                 ]
               }),
-              ...data.whtPayments.map(payment => 
+              ...data.whtPayments.map(payment =>
                 new TableRow({
                   children: [
                     new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: payment.vendor || "" })] })] }),
@@ -461,9 +464,9 @@ class DocumentService {
               )
             ]
           }),
-          
+
           new Paragraph({ spacing: { after: 400 } }),
-          
+
           // Vendor Summary
           new Paragraph({
             children: [
@@ -476,7 +479,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Table({
             width: { size: 100, type: WidthType.PERCENTAGE },
             rows: [
@@ -488,7 +491,7 @@ class DocumentService {
                   new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Payment Count", bold: true })] })] })
                 ]
               }),
-              ...data.vendorSummary.map(vendor => 
+              ...data.vendorSummary.map(vendor =>
                 new TableRow({
                   children: [
                     new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: vendor.vendor })] })] }),
@@ -527,7 +530,7 @@ class DocumentService {
             alignment: AlignmentType.CENTER,
             spacing: { after: 400 }
           }),
-          
+
           // Company Info
           new Paragraph({
             children: [
@@ -540,7 +543,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Paragraph({
             children: [
               new TextRun({
@@ -551,7 +554,7 @@ class DocumentService {
             ],
             spacing: { after: 400 }
           }),
-          
+
           // Voucher Details
           new Paragraph({
             children: [
@@ -563,7 +566,7 @@ class DocumentService {
             ],
             spacing: { after: 200 }
           }),
-          
+
           new Paragraph({
             children: [
               new TextRun({
@@ -574,7 +577,7 @@ class DocumentService {
             ],
             spacing: { after: 400 }
           }),
-          
+
           // Individual Vouchers
           ...data.vouchers.map((voucher, index) => [
             new Paragraph({
@@ -588,7 +591,7 @@ class DocumentService {
               ],
               spacing: { after: 200 }
             }),
-            
+
             new Table({
               width: { size: 100, type: WidthType.PERCENTAGE },
               rows: [
@@ -642,7 +645,7 @@ class DocumentService {
                 })
               ]
             }),
-            
+
             new Paragraph({ spacing: { after: 400 } })
           ]).flat()
         ]
