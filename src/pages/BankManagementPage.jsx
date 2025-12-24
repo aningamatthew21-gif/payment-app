@@ -21,13 +21,65 @@ const BankManagementPage = ({ onNavigate, onBack, onLogout, userId, db, appId })
         try {
             setLoading(true);
             const fetchedBanks = await BankService.getAllBanks(db, appId);
-            setBanks(fetchedBanks);
+
+            // Calculate monthly stats for each bank from ledger
+            const banksWithStats = await Promise.all(fetchedBanks.map(async (bank) => {
+                try {
+                    const ledger = await BankService.getBankLedger(db, appId, bank.id);
+                    const stats = calculateMonthlyStatsFromLedger(ledger);
+                    return { ...bank, stats };
+                } catch (error) {
+                    console.error(`Error loading stats for ${bank.name}:`, error);
+                    return { ...bank, stats: { monthlyInflow: 0, monthlyOutflow: 0 } };
+                }
+            }));
+
+            setBanks(banksWithStats);
         } catch (error) {
             console.error('Error loading banks:', error);
             alert('Failed to load banks: ' + error.message);
         } finally {
             setLoading(false);
         }
+    };
+
+    // Helper to calculate monthly stats from ledger entries
+    const calculateMonthlyStatsFromLedger = (ledger) => {
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+
+        let monthlyInflow = 0;
+        let monthlyOutflow = 0;
+
+        ledger.forEach(entry => {
+            // Handle Firestore timestamp properly
+            let entryDate;
+            if (entry.timestamp?.toDate) {
+                entryDate = entry.timestamp.toDate();
+            } else if (entry.timestamp?.seconds) {
+                entryDate = new Date(entry.timestamp.seconds * 1000);
+            } else if (entry.date) {
+                entryDate = new Date(entry.date);
+            } else if (entry.timestamp) {
+                entryDate = new Date(entry.timestamp);
+            } else {
+                return; // Skip entries without valid date
+            }
+
+            // Validate date
+            if (isNaN(entryDate.getTime())) return;
+
+            if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
+                if (entry.type === 'INFLOW') {
+                    monthlyInflow += Math.abs(Number(entry.amount || 0));
+                } else {
+                    monthlyOutflow += Math.abs(Number(entry.amount || 0));
+                }
+            }
+        });
+
+        return { monthlyInflow, monthlyOutflow };
     };
 
     const selectedBank = banks.find(b => b.id === selectedBankId);

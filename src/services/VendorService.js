@@ -22,10 +22,31 @@ export const VendorService = {
         }
     },
 
+    // Check if vendor already exists (case-insensitive exact match)
+    vendorExists: async (db, appId, vendorName) => {
+        try {
+            if (!vendorName || typeof vendorName !== 'string') return null;
+            const vendors = await VendorService.getAllVendors(db, appId);
+            const normalizedName = vendorName.trim().toLowerCase();
+            return vendors.find(v => v.name?.trim().toLowerCase() === normalizedName) || null;
+        } catch (error) {
+            console.error("[VendorService] Error checking vendor existence:", error);
+            return null;
+        }
+    },
+
     // Add a new vendor to Firestore Vendor Management collection
+    // Returns existing vendor with isDuplicate:true if already exists
     addVendor: async (db, appId, vendorData) => {
         try {
-            console.log("[VendorService] Adding vendor to Firestore:", vendorData);
+            // Check for duplicate before adding
+            const existingVendor = await VendorService.vendorExists(db, appId, vendorData.name);
+            if (existingVendor) {
+                console.log("[VendorService] Vendor already exists, skipping:", existingVendor.name);
+                return { ...existingVendor, isDuplicate: true };
+            }
+
+            console.log("[VendorService] Adding new vendor to Firestore:", vendorData);
             const vendorsRef = collection(db, `artifacts/${appId}/public/data/vendors`);
             const docRef = await addDoc(vendorsRef, {
                 ...vendorData,
@@ -238,21 +259,45 @@ export const VendorService = {
         });
     },
 
-    // Bulk import vendors to Firestore
+    // Bulk import vendors to Firestore with duplicate detection
     importVendors: async (db, appId, vendors) => {
         try {
             console.log(`[VendorService] Importing ${vendors.length} vendors to Firestore...`);
+
+            // Pre-fetch existing vendors for duplicate checking (more efficient than checking one-by-one)
+            const existingVendors = await VendorService.getAllVendors(db, appId);
+            const existingNamesSet = new Set(
+                existingVendors.map(v => v.name?.trim().toLowerCase()).filter(Boolean)
+            );
+            console.log(`[VendorService] Found ${existingNamesSet.size} existing vendors for duplicate check`);
 
             const vendorsRef = collection(db, `artifacts/${appId}/public/data/vendors`);
             const results = {
                 success: true,
                 imported: 0,
+                skipped: 0,   // Duplicates skipped
                 failed: 0,
-                errors: []
+                errors: [],
+                duplicates: []  // Track which vendors were skipped as duplicates
             };
 
             // Import each vendor individually for better error handling
             for (const vendor of vendors) {
+                const vendorName = vendor.name?.trim();
+                if (!vendorName) {
+                    results.failed++;
+                    results.errors.push({ vendor: '(empty name)', error: 'Vendor name is required' });
+                    continue;
+                }
+
+                // Check for duplicate (case-insensitive)
+                if (existingNamesSet.has(vendorName.toLowerCase())) {
+                    console.log(`[VendorService] Skipping duplicate vendor: ${vendorName}`);
+                    results.skipped++;
+                    results.duplicates.push(vendorName);
+                    continue;
+                }
+
                 try {
                     await addDoc(vendorsRef, {
                         ...vendor,
@@ -261,16 +306,18 @@ export const VendorService = {
                         importedAt: new Date().toISOString()
                     });
                     results.imported++;
+                    // Add to set to prevent duplicates within same import batch
+                    existingNamesSet.add(vendorName.toLowerCase());
                 } catch (error) {
                     results.failed++;
                     results.errors.push({
-                        vendor: vendor.name,
+                        vendor: vendorName,
                         error: error.message
                     });
                 }
             }
 
-            console.log(`[VendorService] Import complete: ${results.imported} success, ${results.failed} failed`);
+            console.log(`[VendorService] Import complete: ${results.imported} imported, ${results.skipped} skipped (duplicates), ${results.failed} failed`);
             return results;
 
         } catch (error) {
@@ -278,8 +325,10 @@ export const VendorService = {
             return {
                 success: false,
                 imported: 0,
+                skipped: 0,
                 failed: vendors.length,
-                errors: [{ vendor: 'All', error: error.message }]
+                errors: [{ vendor: 'All', error: error.message }],
+                duplicates: []
             };
         }
     },

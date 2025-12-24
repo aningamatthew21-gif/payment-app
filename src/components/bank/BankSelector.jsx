@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ChevronLeft, Plus, Download, Upload, X, CheckCircle, AlertCircle, FileSpreadsheet } from 'lucide-react';
 import BankCard from './BankCard';
-import AddBankModal from './AddBankModal';
+import BankModal from './BankModal';
 import { BankService } from '../../services/BankService';
 
 const BankSelector = ({ banks, onSelectBank, onBack, db, appId, userId, onBankAdded }) => {
@@ -114,8 +114,8 @@ const BankSelector = ({ banks, onSelectBank, onBack, db, appId, userId, onBankAd
             {/* Status Messages */}
             {importStatus && (
                 <div className={`p-4 rounded-lg border flex items-center ${importStatus.type === 'success' ? 'bg-green-50 border-green-200 text-green-800' :
-                        importStatus.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
-                            'bg-blue-50 border-blue-200 text-blue-800'
+                    importStatus.type === 'error' ? 'bg-red-50 border-red-200 text-red-800' :
+                        'bg-blue-50 border-blue-200 text-blue-800'
                     }`}>
                     {importStatus.type === 'success' && <CheckCircle className="mr-2" size={20} />}
                     {importStatus.type === 'error' && <AlertCircle className="mr-2" size={20} />}
@@ -300,7 +300,7 @@ const BankSelector = ({ banks, onSelectBank, onBack, db, appId, userId, onBankAd
             </div>
 
             {/* Add Bank Modal */}
-            <AddBankModal
+            <BankModal
                 isOpen={showAddModal}
                 onClose={() => setShowAddModal(false)}
                 db={db}

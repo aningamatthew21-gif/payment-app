@@ -657,6 +657,7 @@ const PaymentGenerator = ({
       preparedBy,
       paymentPriority,
       approvalNotes,
+      cashFlowCategory: state.cashFlowCategory || 'Other Outflow', // ✅ CRITICAL: Include for cash flow reporting
 
       // ✅ CRITICAL FIX: Strict Bank Field Separation
       bank, // Company's SOURCE bank (where money is deducted FROM)
@@ -835,6 +836,12 @@ const PaymentGenerator = ({
       return;
     }
 
+    // Cash Flow Category validation - required for reporting
+    if (!state.cashFlowCategory) {
+      alert('Please select a Cash Flow Category. This is required for cash flow reporting.');
+      return;
+    }
+
     setIsProcessing(true);
     setProcessingStep('Syncing payment data...');
 
@@ -900,6 +907,7 @@ const PaymentGenerator = ({
           approvedBy,
           authorizedBy,
           paymentPriority: paymentPriority || 'normal',
+          cashFlowCategory: state.cashFlowCategory || 'Other Outflow',
 
           // Timestamps
           createdAt: serverTimestamp(),
@@ -1698,6 +1706,34 @@ const PaymentGenerator = ({
                       ))
                     )}
                   </select>
+                </div>
+              </div>
+
+              {/* Cash Flow Category - REQUIRED */}
+              <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Cash Flow Category <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={state.cashFlowCategory || ''}
+                    onChange={(e) => dispatch({ type: actionTypes.SET_FIELD, payload: { field: 'cashFlowCategory', value: e.target.value } })}
+                    className={`w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white ${!state.cashFlowCategory ? 'border-red-300' : 'border-gray-300'
+                      }`}
+                  >
+                    <option value="">Select cash flow category</option>
+                    <option value="Accredited Suppliers">Accredited Suppliers (Vendor)</option>
+                    <option value="Admin Operations">Admin Operations (Opex)</option>
+                    <option value="Regulatory Payment">Regulatory Payment (Tax, SSNIT)</option>
+                    <option value="Staff Emoluments">Staff Emoluments (Salaries)</option>
+                    <option value="Loan Principal">Loan Principal Prepayment</option>
+                    <option value="Inter-account Transfer">Inter-account Transfer (Out)</option>
+                    <option value="Inter-company Transfer">Inter-company Transfer</option>
+                    <option value="USD Purchase">USD Purchase</option>
+                    <option value="Bank Charges">Bank Charges</option>
+                    <option value="Other Outflow">Other Outflow</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">Required for cash flow reporting</p>
                 </div>
               </div>
 

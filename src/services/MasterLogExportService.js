@@ -7,7 +7,7 @@ import * as XLSX from 'xlsx';
  * Exports data at transaction level with comprehensive details
  */
 export class MasterLogExportService {
-  
+
   /**
    * Export master log data to Excel with comprehensive fields matching VBA system
    * @param {Object} db - Firestore database instance
@@ -19,21 +19,21 @@ export class MasterLogExportService {
   static async exportMasterLogToExcel(db, appId, filters = {}, format = 'xlsx') {
     try {
       console.log('[MasterLogExportService] Exporting master log data to Excel');
-      
+
       // Get master log data
       const entries = await this.getMasterLogData(db, appId, filters);
-      
+
       if (entries.length === 0) {
         throw new Error('No master log data found for export');
       }
-      
+
       // Transform data to match VBA system structure
       const transformedData = this.transformDataForExport(entries);
-      
+
       // Create workbook and worksheet
       const workbook = XLSX.utils.book_new();
       const worksheet = XLSX.utils.json_to_sheet(transformedData);
-      
+
       // Set column headers to match VBA system exactly
       const headers = [
         'LogTimestamp',
@@ -71,10 +71,10 @@ export class MasterLogExportService {
         'VoucherID',
         'BatchID'
       ];
-      
+
       // Set column headers
       XLSX.utils.sheet_add_aoa(worksheet, [headers], { origin: 'A1' });
-      
+
       // Auto-size columns
       const columnWidths = headers.map(header => {
         // Calculate appropriate width based on header length and content
@@ -84,28 +84,28 @@ export class MasterLogExportService {
         );
         return Math.min(Math.max(maxLength + 2, 10), 50); // Min 10, Max 50
       });
-      
+
       worksheet['!cols'] = columnWidths.map(width => ({ width }));
-      
+
       // Add worksheet to workbook
       XLSX.utils.book_append_sheet(workbook, worksheet, 'MasterLogData');
-      
+
       // Generate filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
       const filename = `MasterLog_Export_${timestamp}.${format}`;
-      
+
       // Export to blob
       const blob = XLSX.write(workbook, { bookType: format, type: 'blob' });
-      
+
       console.log(`[MasterLogExportService] Successfully exported ${transformedData.length} records to ${format}`);
       return { blob, filename };
-      
+
     } catch (error) {
       console.error('[MasterLogExportService] Error exporting master log to Excel:', error);
       throw new Error(`Export failed: ${error.message}`);
     }
   }
-  
+
   /**
    * Export master log data to CSV format
    * @param {Object} db - Firestore database instance
@@ -116,17 +116,17 @@ export class MasterLogExportService {
   static async exportMasterLogToCSV(db, appId, filters = {}) {
     try {
       console.log('[MasterLogExportService] Exporting master log data to CSV');
-      
+
       // Get master log data
       const entries = await this.getMasterLogData(db, appId, filters);
-      
+
       if (entries.length === 0) {
         throw new Error('No master log data found for export');
       }
-      
+
       // Transform data to match VBA system structure
       const transformedData = this.transformDataForExport(entries);
-      
+
       // Create CSV content
       const headers = [
         'LogTimestamp',
@@ -164,11 +164,11 @@ export class MasterLogExportService {
         'VoucherID',
         'BatchID'
       ];
-      
+
       // Create CSV rows
       const csvRows = [
         headers.join(','), // Header row
-        ...transformedData.map(row => 
+        ...transformedData.map(row =>
           headers.map(header => {
             const value = row[header];
             // Escape CSV values properly
@@ -181,23 +181,23 @@ export class MasterLogExportService {
           }).join(',')
         )
       ];
-      
+
       const csvContent = csvRows.join('\n');
       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      
+
       // Generate filename
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0];
       const filename = `MasterLog_Export_${timestamp}.csv`;
-      
+
       console.log(`[MasterLogExportService] Successfully exported ${transformedData.length} records to CSV`);
       return { blob, filename };
-      
+
     } catch (error) {
       console.error('[MasterLogExportService] Error exporting master log to CSV:', error);
       throw new Error(`CSV export failed: ${error.message}`);
     }
   }
-  
+
   /**
    * Get master log data from Firestore
    * @param {Object} db - Firestore database instance
@@ -208,83 +208,58 @@ export class MasterLogExportService {
   static async getMasterLogData(db, appId, filters = {}) {
     try {
       console.log('[MasterLogExportService] Fetching master log data with filters:', filters);
-      
-      // Try primary collection first
-      let q = collection(db, `artifacts/${appId}/masterLog`);
-      
-      // Apply filters
+
+      // ✅ FIX: Use correct collection path (matches where MasterLogService stores data)
+      const collectionPath = `artifacts/${appId}/public/data/masterLog`;
+      console.log('[MasterLogExportService] Using collection path:', collectionPath);
+
+      let q = collection(db, collectionPath);
+
+      // Build query with filters
+      const queryConstraints = [];
+
       if (filters.budgetLine) {
-        q = query(q, where('budgetLine', '==', filters.budgetLine));
+        queryConstraints.push(where('budgetLine', '==', filters.budgetLine));
       }
       if (filters.vendor) {
-        q = query(q, where('vendorName', '==', filters.vendor));
+        queryConstraints.push(where('vendorName', '==', filters.vendor));
       }
       if (filters.dateFrom) {
-        q = query(q, where('finalizationDate', '>=', filters.dateFrom));
+        queryConstraints.push(where('finalizationDate', '>=', filters.dateFrom));
       }
       if (filters.dateTo) {
-        q = query(q, where('finalizationDate', '<=', filters.dateTo));
+        queryConstraints.push(where('finalizationDate', '<=', filters.dateTo));
       }
       if (filters.currency) {
-        q = query(q, where('currency_Tx', '==', filters.currency));
+        queryConstraints.push(where('currency_Tx', '==', filters.currency));
       }
       if (filters.isPartialPayment !== undefined) {
-        q = query(q, where('isPartialPayment', '==', filters.isPartialPayment));
+        queryConstraints.push(where('isPartialPayment', '==', filters.isPartialPayment));
       }
-      
-      // Order by timestamp
-      q = query(q, orderBy('logTimestamp', 'desc'));
-      
-      let snapshot;
-      try {
-        snapshot = await getDocs(q);
-      } catch (error) {
-        if (error.code === 'permission-denied') {
-          // Fallback to public data path
-          console.log('[MasterLogExportService] Primary path failed, using fallback path');
-          q = collection(db, `artifacts/${appId}/public/data/masterLog`);
-          
-          // Reapply filters
-          if (filters.budgetLine) {
-            q = query(q, where('budgetLine', '==', filters.budgetLine));
-          }
-          if (filters.vendor) {
-            q = query(q, where('vendorName', '==', filters.vendor));
-          }
-          if (filters.dateFrom) {
-            q = query(q, where('finalizationDate', '>=', filters.dateFrom));
-          }
-          if (filters.dateTo) {
-            q = query(q, where('finalizationDate', '<=', filters.dateTo));
-          }
-          if (filters.currency) {
-            q = query(q, where('currency_Tx', '==', filters.currency));
-          }
-          if (filters.isPartialPayment !== undefined) {
-            q = query(q, where('isPartialPayment', '==', filters.isPartialPayment));
-          }
-          
-          q = query(q, orderBy('logTimestamp', 'desc'));
-          snapshot = await getDocs(q);
-        } else {
-          throw error;
-        }
+
+      // Apply constraints and order
+      if (queryConstraints.length > 0) {
+        q = query(q, ...queryConstraints, orderBy('logTimestamp', 'desc'));
+      } else {
+        q = query(q, orderBy('logTimestamp', 'desc'));
       }
-      
+
+      const snapshot = await getDocs(q);
+
       const entries = [];
       snapshot.forEach(doc => {
         entries.push({ id: doc.id, ...doc.data() });
       });
-      
+
       console.log(`[MasterLogExportService] Retrieved ${entries.length} master log entries`);
       return entries;
-      
+
     } catch (error) {
       console.error('[MasterLogExportService] Error fetching master log data:', error);
       throw new Error(`Failed to fetch master log data: ${error.message}`);
     }
   }
-  
+
   /**
    * Transform data to match VBA system export format exactly
    * @param {Array} entries - Raw master log entries
@@ -303,13 +278,13 @@ export class MasterLogExportService {
           logTimestamp = entry.logTimestamp;
         }
       }
-      
+
       // Transform boolean to string for Excel compatibility
       const isPartialPayment = entry.isPartialPayment ? 'TRUE' : 'FALSE';
-      
+
       // Ensure all numeric fields are properly formatted
       const paymentPercentage = entry.isPartialPayment ? (entry.paymentPercentage || 100) : 100;
-      
+
       return {
         LogTimestamp: logTimestamp,
         TransactionID: entry.transactionID || 'N/A',
@@ -348,7 +323,7 @@ export class MasterLogExportService {
       };
     });
   }
-  
+
   /**
    * Format number for export (handle null/undefined and ensure proper decimal places)
    * @param {number} value - Number value to format
@@ -358,15 +333,15 @@ export class MasterLogExportService {
     if (value === null || value === undefined || isNaN(value)) {
       return '0.00';
     }
-    
+
     const num = Number(value);
     if (isNaN(num)) {
       return '0.00';
     }
-    
+
     return num.toFixed(2);
   }
-  
+
   /**
    * Download file blob
    * @param {Blob} blob - File blob to download
@@ -382,14 +357,14 @@ export class MasterLogExportService {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       console.log(`[MasterLogExportService] File downloaded successfully: ${filename}`);
     } catch (error) {
       console.error('[MasterLogExportService] Error downloading file:', error);
       throw new Error(`Download failed: ${error.message}`);
     }
   }
-  
+
   /**
    * Export master log with automatic format detection and download
    * @param {Object} db - Firestore database instance
@@ -401,9 +376,9 @@ export class MasterLogExportService {
   static async exportAndDownload(db, appId, filters = {}, format = 'auto') {
     try {
       console.log(`[MasterLogExportService] Starting export with format: ${format}`);
-      
+
       let result;
-      
+
       if (format === 'auto' || format === 'xlsx') {
         try {
           result = await this.exportMasterLogToExcel(db, appId, filters, 'xlsx');
@@ -420,16 +395,16 @@ export class MasterLogExportService {
       } else {
         throw new Error(`Unsupported export format: ${format}`);
       }
-      
+
       // Download the file
       this.downloadFile(result.blob, result.filename);
-      
+
     } catch (error) {
       console.error('[MasterLogExportService] Export and download failed:', error);
       throw new Error(`Export and download failed: ${error.message}`);
     }
   }
-  
+
   /**
    * Get export statistics for the current dataset
    * @param {Object} db - Firestore database instance
@@ -440,7 +415,7 @@ export class MasterLogExportService {
   static async getExportStatistics(db, appId, filters = {}) {
     try {
       const entries = await this.getMasterLogData(db, appId, filters);
-      
+
       const stats = {
         totalRecords: entries.length,
         dateRange: {
@@ -455,19 +430,19 @@ export class MasterLogExportService {
         totalAmount: 0,
         totalBudgetImpactUSD: 0
       };
-      
+
       if (entries.length > 0) {
         // Calculate date range
         const dates = entries
           .map(entry => entry.finalizationDate)
           .filter(date => date && date !== 'N/A')
           .sort();
-        
+
         if (dates.length > 0) {
           stats.dateRange.earliest = dates[0];
           stats.dateRange.latest = dates[dates.length - 1];
         }
-        
+
         // Calculate other statistics
         entries.forEach(entry => {
           // Currency breakdown
@@ -477,7 +452,7 @@ export class MasterLogExportService {
           }
           stats.currencyBreakdown[currency].count++;
           stats.currencyBreakdown[currency].total += Number(entry.netPayable_ThisTx || 0);
-          
+
           // Budget line breakdown
           const budgetLine = entry.budgetLine || 'Unknown';
           if (!stats.budgetLineBreakdown[budgetLine]) {
@@ -485,7 +460,7 @@ export class MasterLogExportService {
           }
           stats.budgetLineBreakdown[budgetLine].count++;
           stats.budgetLineBreakdown[budgetLine].totalUSD += Number(entry.budgetImpactUSD_ThisTx || 0);
-          
+
           // Vendor breakdown
           const vendor = entry.vendorName || 'Unknown';
           if (!stats.vendorBreakdown[vendor]) {
@@ -493,22 +468,22 @@ export class MasterLogExportService {
           }
           stats.vendorBreakdown[vendor].count++;
           stats.vendorBreakdown[vendor].total += Number(entry.netPayable_ThisTx || 0);
-          
+
           // Payment type counts
           if (entry.isPartialPayment) {
             stats.partialPaymentCount++;
           } else {
             stats.fullPaymentCount++;
           }
-          
+
           // Total amounts
           stats.totalAmount += Number(entry.netPayable_ThisTx || 0);
           stats.totalBudgetImpactUSD += Number(entry.budgetImpactUSD_ThisTx || 0);
         });
       }
-      
+
       return stats;
-      
+
     } catch (error) {
       console.error('[MasterLogExportService] Error getting export statistics:', error);
       throw new Error(`Failed to get export statistics: ${error.message}`);

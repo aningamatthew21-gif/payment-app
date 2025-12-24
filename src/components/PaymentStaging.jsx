@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, onSnapshot, deleteDoc, doc, getDocs, setDoc, addDoc } from 'firebase/firestore';
+import { collection, query, where, onSnapshot, deleteDoc, doc, getDocs, setDoc, addDoc } from 'firebase/firestore';
 import { FileText, CreditCard, XCircle, ArrowLeft, RefreshCw, Trash2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable'; // Change this import
@@ -452,18 +452,28 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
     setShowVoucherPreview(true);
   };
 
-  const convertAmountToWords = (amount) => {
+  const convertAmountToWords = (amount, depth = 0) => {
+    // Prevent infinite recursion
+    if (depth > 10) return 'NUMBER TOO LARGE';
+
+    // Handle invalid inputs
+    if (amount === null || amount === undefined || isNaN(amount)) return 'ZERO';
+
+    // Ensure we're working with a positive integer
+    amount = Math.abs(Math.floor(Number(amount)));
+
     const ones = ['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE'];
     const tens = ['', '', 'TWENTY', 'THIRTY', 'FORTY', 'FIFTY', 'SIXTY', 'SEVENTY', 'EIGHTY', 'NINETY'];
     const teens = ['TEN', 'ELEVEN', 'TWELVE', 'THIRTEEN', 'FOURTEEN', 'FIFTEEN', 'SIXTEEN', 'SEVENTEEN', 'EIGHTEEN', 'NINETEEN'];
 
-    if (amount === 0) return 'ZERO';
-    if (amount < 10) return ones[Math.floor(amount)];
-    if (amount < 20) return teens[Math.floor(amount) - 10];
-    if (amount < 100) return tens[Math.floor(amount / 10)] + (amount % 10 > 0 ? ' ' + ones[Math.floor(amount) % 10] : '');
-    if (amount < 1000) return ones[Math.floor(amount / 100)] + ' HUNDRED' + (amount % 100 > 0 ? ' AND ' + convertAmountToWords(amount % 100) : '');
-    if (amount < 1000000) return convertAmountToWords(Math.floor(amount / 1000)) + ' THOUSAND' + (amount % 1000 > 0 ? ' ' + convertAmountToWords(amount % 1000) : '');
-    return convertAmountToWords(Math.floor(amount / 1000000)) + ' MILLION' + (amount % 1000000 > 0 ? ' ' + convertAmountToWords(amount % 1000000) : '');
+    if (amount === 0) return depth === 0 ? 'ZERO' : '';
+    if (amount < 10) return ones[amount];
+    if (amount < 20) return teens[amount - 10];
+    if (amount < 100) return tens[Math.floor(amount / 10)] + (amount % 10 > 0 ? ' ' + ones[amount % 10] : '');
+    if (amount < 1000) return ones[Math.floor(amount / 100)] + ' HUNDRED' + (amount % 100 > 0 ? ' AND ' + convertAmountToWords(amount % 100, depth + 1) : '');
+    if (amount < 1000000) return convertAmountToWords(Math.floor(amount / 1000), depth + 1) + ' THOUSAND' + (amount % 1000 > 0 ? ' ' + convertAmountToWords(amount % 1000, depth + 1) : '');
+    if (amount < 1000000000) return convertAmountToWords(Math.floor(amount / 1000000), depth + 1) + ' MILLION' + (amount % 1000000 > 0 ? ' ' + convertAmountToWords(amount % 1000000, depth + 1) : '');
+    return convertAmountToWords(Math.floor(amount / 1000000000), depth + 1) + ' BILLION' + (amount % 1000000000 > 0 ? ' ' + convertAmountToWords(amount % 1000000000, depth + 1) : '');
   };
 
   const finalizePayments = async () => {
@@ -1457,6 +1467,11 @@ const PaymentStaging = ({ db, appId, userId, weeklySheetId, onClose, payments: p
 
   const renderVoucherPreview = () => {
     if (!voucherData) return null;
+    // Safety check for payments array
+    if (!voucherData.payments || voucherData.payments.length === 0) {
+      console.warn('[PaymentStaging] renderVoucherPreview: No payments in voucherData');
+      return null;
+    }
 
     const totalAmount = voucherData.totalAmount;
     const amountInWords = convertAmountToWords(Math.floor(totalAmount)) + ' CEDIS AND ' +

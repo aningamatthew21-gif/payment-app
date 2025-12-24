@@ -11,6 +11,7 @@ import {
     getDoc,
     addDoc,
     updateDoc,
+    deleteDoc,
     runTransaction,
     query,
     orderBy,
@@ -64,6 +65,56 @@ export class BankService {
         } catch (error) {
             console.error('[BankService] Error fetching bank:', error);
             return null;
+        }
+    }
+
+    /**
+     * Update an existing bank
+     * @param {Object} db - Firestore database instance
+     * @param {string} appId - Application ID
+     * @param {string} bankId - Bank ID to update
+     * @param {Object} updates - Fields to update
+     * @returns {Promise<Object>} Updated bank object
+     */
+    static async updateBank(db, appId, bankId, updates) {
+        try {
+            console.log('[BankService] Updating bank:', bankId, updates);
+            const bankRef = doc(db, `artifacts/${appId}/public/data/banks`, bankId);
+
+            // Don't allow balance updates through this method (use ledger transactions)
+            const { balance, ...safeUpdates } = updates;
+
+            await updateDoc(bankRef, {
+                ...safeUpdates,
+                lastUpdated: serverTimestamp()
+            });
+
+            console.log('[BankService] Bank updated successfully:', bankId);
+            return { success: true, id: bankId };
+        } catch (error) {
+            console.error('[BankService] Error updating bank:', error);
+            throw error;
+        }
+    }
+
+    /**
+     * Delete a bank account
+     * WARNING: This should be used carefully - consider deactivating instead
+     * @param {Object} db - Firestore database instance
+     * @param {string} appId - Application ID
+     * @param {string} bankId - Bank ID to delete
+     * @returns {Promise<Object>} Result object
+     */
+    static async deleteBank(db, appId, bankId) {
+        try {
+            console.log('[BankService] Deleting bank:', bankId);
+            const bankRef = doc(db, `artifacts/${appId}/public/data/banks`, bankId);
+            await deleteDoc(bankRef);
+            console.log('[BankService] Bank deleted successfully:', bankId);
+            return { success: true };
+        } catch (error) {
+            console.error('[BankService] Error deleting bank:', error);
+            throw error;
         }
     }
 
@@ -307,7 +358,8 @@ export class BankService {
                     bankName: bankData.name,
                     type: 'OUTFLOW',
                     amount: -parsedAmount, // Negative for outflow
-                    category: 'Payment Batch',
+                    // Use cashFlowCategory from metadata if provided, otherwise default
+                    category: metadata.cashFlowCategory || 'Other Outflow',
                     description: metadata.description || `Payment batch finalization (${paymentCount} payment${paymentCount > 1 ? 's' : ''})`,
                     reference: batchId,
                     relatedEntityId: batchId, // Link back to the batch
@@ -322,6 +374,7 @@ export class BankService {
                     // Payment-specific tracking
                     vendor: metadata.vendors || '', // Comma-separated vendor names
                     paymentCount,
+                    cashFlowCategory: metadata.cashFlowCategory || 'Other Outflow', // ✅ Explicitly store for reporting
                     metadata
                 });
 

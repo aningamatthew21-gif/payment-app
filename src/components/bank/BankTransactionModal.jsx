@@ -23,9 +23,10 @@ const BankTransactionModal = ({ isOpen, onClose, bank, mode = 'INFLOW', onSave }
     const [loading, setLoading] = useState(false);
 
     // Dynamic category options based on transaction type
+    // Aligned with CashPositionService categories for accurate reporting
     const categories = isInflow
-        ? ['Client Payment', 'Top Up', 'Refund', 'Interest Income', 'Transfer In', 'Other Income']
-        : ['Bank Charges', 'Cheque Withdrawal', 'Direct Debit', 'Transfer Out', 'Fees', 'Correction', 'Other'];
+        ? ['Cash Sales', 'Account Receivable', 'Inter-company Receipt', 'Uncredited Payment', 'Inter-account Transfer', 'Account Interest', 'Other Inflow']
+        : ['Bank Charges', 'Accredited Suppliers', 'Admin Operations', 'Regulatory Payment', 'Staff Emoluments', 'Inter-account Transfer', 'Other Outflow'];
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -108,8 +109,8 @@ const BankTransactionModal = ({ isOpen, onClose, bank, mode = 'INFLOW', onSave }
                                 step="0.01"
                                 required
                                 className={`w-full pl-16 p-3 text-xl font-bold border rounded-lg focus:ring-2 focus:outline-none ${isInflow
-                                        ? 'border-emerald-200 focus:ring-emerald-500 text-emerald-700'
-                                        : 'border-rose-200 focus:ring-rose-500 text-rose-700'
+                                    ? 'border-emerald-200 focus:ring-emerald-500 text-emerald-700'
+                                    : 'border-rose-200 focus:ring-rose-500 text-rose-700'
                                     }`}
                                 placeholder="0.00"
                                 value={formData.amount}
@@ -193,8 +194,8 @@ const BankTransactionModal = ({ isOpen, onClose, bank, mode = 'INFLOW', onSave }
                             type="submit"
                             disabled={loading}
                             className={`flex-1 py-3 text-white rounded-lg font-bold shadow-md flex justify-center items-center space-x-2 transition-colors ${isInflow
-                                    ? 'bg-emerald-600 hover:bg-emerald-700'
-                                    : 'bg-rose-600 hover:bg-rose-700'
+                                ? 'bg-emerald-600 hover:bg-emerald-700'
+                                : 'bg-rose-600 hover:bg-rose-700'
                                 } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
                         >
                             <Save size={18} />

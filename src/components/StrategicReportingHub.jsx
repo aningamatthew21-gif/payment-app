@@ -1,9 +1,10 @@
 import React, { useState, useRef } from 'react';
-import { FileText, Download, BarChart2, Calendar, X, TrendingUp, DollarSign, Users, FileCheck } from 'lucide-react';
+import { FileText, Download, BarChart2, Calendar, X, TrendingUp, DollarSign, Users, FileCheck, Wallet } from 'lucide-react';
 import html2canvas from 'html2canvas';
 import ReportingService from '../services/ReportingService';
 import StrategicDocumentService from '../services/StrategicDocumentService';
 import ReportCharts from './ReportCharts';
+import WeeklyCashPositionReport from './WeeklyCashPositionReport';
 
 /**
  * Helper: Generate html2canvas options that strip oklch colors
@@ -65,6 +66,7 @@ const StrategicReportingHub = ({ isOpen, onClose, db, appId }) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [status, setStatus] = useState('');
     const [reportData, setReportData] = useState(null);
+    const [showCashPosition, setShowCashPosition] = useState(false);
 
     // Ref for the hidden chart container
     const chartsRef = useRef(null);
@@ -338,6 +340,15 @@ const StrategicReportingHub = ({ isOpen, onClose, db, appId }) => {
                                 Generate specific reports for focused analysis (Coming Soon)
                             </p>
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                {/* ACTIVE: Cash Position Report */}
+                                <div
+                                    className="p-4 bg-amber-50 rounded-lg text-center cursor-pointer hover:bg-amber-100 border border-amber-200 transition-colors"
+                                    onClick={() => setShowCashPosition(true)}
+                                >
+                                    <Wallet className="mx-auto mb-2 text-amber-600" size={24} />
+                                    <div className="font-semibold text-amber-800 text-sm">Cash Position</div>
+                                    <div className="text-xs text-amber-600 mt-1">Weekly Bank Report</div>
+                                </div>
                                 <div className="p-4 bg-slate-50 rounded-lg text-center opacity-60 cursor-not-allowed border border-slate-200">
                                     <DollarSign className="mx-auto mb-2 text-slate-400" size={24} />
                                     <div className="font-semibold text-slate-600 text-sm">Financial Only</div>
@@ -377,6 +388,14 @@ const StrategicReportingHub = ({ isOpen, onClose, db, appId }) => {
                 }}>
                     <ReportCharts ref={chartsRef} data={reportData} />
                 </div>
+
+                {/* Cash Position Report Modal */}
+                <WeeklyCashPositionReport
+                    isOpen={showCashPosition}
+                    onClose={() => setShowCashPosition(false)}
+                    db={db}
+                    appId={appId}
+                />
 
             </div>
         </div >

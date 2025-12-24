@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronLeft, TrendingUp, TrendingDown, Wallet, ArrowDownLeft, ArrowUpRight } from 'lucide-react';
+import { ChevronLeft, TrendingUp, TrendingDown, Wallet, ArrowDownLeft, ArrowUpRight, Edit, Trash2 } from 'lucide-react';
 import TransactionTable from './TransactionTable';
 import BankTransactionModal from './BankTransactionModal';
+import BankModal from './BankModal';
 import { BankService } from '../../services/BankService';
 
 const BankDetailView = ({ bank, onBack, db, appId, userId }) => {
     const [showModal, setShowModal] = useState({ isOpen: false, mode: 'INFLOW' });
+    const [showEditModal, setShowEditModal] = useState(false);
     const [ledger, setLedger] = useState([]);
     const [loadingLedger, setLoadingLedger] = useState(true);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
@@ -134,9 +136,40 @@ const BankDetailView = ({ bank, onBack, db, appId, userId }) => {
                         <p className="text-slate-500 font-mono text-sm">{bank.accountNumber} • {bank.currency || 'GHS'}</p>
                     </div>
                 </div>
-                <div className="text-right">
-                    <p className="text-sm text-slate-500">Current Balance</p>
-                    <p className="text-3xl font-bold text-slate-900">{formatCurrency(bank.balance || 0)}</p>
+                <div className="text-right flex items-center space-x-4">
+                    <div>
+                        <p className="text-sm text-slate-500">Current Balance</p>
+                        <p className="text-3xl font-bold text-slate-900">{formatCurrency(bank.balance || 0)}</p>
+                    </div>
+                    {/* Edit & Delete Buttons */}
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={() => setShowEditModal(true)}
+                            className="p-2 bg-amber-50 hover:bg-amber-100 text-amber-600 rounded-lg transition-colors border border-amber-200"
+                            title="Edit Bank"
+                        >
+                            <Edit size={20} />
+                        </button>
+                        <button
+                            onClick={async () => {
+                                if (!confirm(`Are you sure you want to delete "${bank.name}"?\n\nThis action cannot be undone. All transaction history will be lost.`)) {
+                                    return;
+                                }
+                                try {
+                                    await BankService.deleteBank(db, appId, bank.id);
+                                    alert('Bank deleted successfully');
+                                    onBack();
+                                } catch (error) {
+                                    console.error('Error deleting bank:', error);
+                                    alert('Failed to delete bank: ' + error.message);
+                                }
+                            }}
+                            className="p-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-lg transition-colors border border-red-200"
+                            title="Delete Bank"
+                        >
+                            <Trash2 size={20} />
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -225,6 +258,20 @@ const BankDetailView = ({ bank, onBack, db, appId, userId }) => {
                 bank={bank}
                 onClose={() => setShowModal({ ...showModal, isOpen: false })}
                 onSave={handleTransactionSave}
+            />
+
+            {/* Edit Bank Modal */}
+            <BankModal
+                isOpen={showEditModal}
+                onClose={() => setShowEditModal(false)}
+                db={db}
+                appId={appId}
+                userId={userId}
+                bank={bank}
+                onSuccess={() => {
+                    setShowEditModal(false);
+                    onBack(); // Return to list to refresh
+                }}
             />
         </div>
     );

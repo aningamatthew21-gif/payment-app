@@ -560,7 +560,8 @@ class PaymentFinalizationService {
             paymentCount: 0,
             payments: [],
             vendors: new Set(), // Track unique vendors
-            descriptions: [] // Track payment descriptions
+            descriptions: [], // Track payment descriptions
+            cashFlowCategories: [] // Track cash flow categories for reporting
           };
         }
 
@@ -577,6 +578,11 @@ class PaymentFinalizationService {
         // Collect descriptions
         if (payment.description || payment.descriptions) {
           bankGroups[bankName].descriptions.push(payment.description || payment.descriptions);
+        }
+
+        // Collect cash flow categories
+        if (payment.cashFlowCategory) {
+          bankGroups[bankName].cashFlowCategories.push(payment.cashFlowCategory);
         }
       }
 
@@ -598,14 +604,20 @@ class PaymentFinalizationService {
             continue;
           }
 
-          // Build enriched metadata
+          // Build enriched metadata - include cashFlowCategory for reporting
+          // Use the most common category, or default to 'Other Outflow'
+          const primaryCategory = group.cashFlowCategories.length > 0
+            ? group.cashFlowCategories[0] // Use first category (for single payments) or most frequent
+            : 'Other Outflow';
+
           const enrichedMetadata = {
             ...metadata,
             paymentIds: group.payments,
             vendors: Array.from(group.vendors).join(', '), // Convert Set to comma-separated string
             description: group.descriptions.length > 0
               ? group.descriptions.join('; ') // Join multiple descriptions
-              : `Payment batch finalization (${group.paymentCount} payment${group.paymentCount > 1 ? 's' : ''})`
+              : `Payment batch finalization (${group.paymentCount} payment${group.paymentCount > 1 ? 's' : ''})`,
+            cashFlowCategory: primaryCategory // ✅ Include cash flow category for bank ledger
           };
 
           // Process deduction
